@@ -60,7 +60,7 @@ export class GroupQueue {
 
     if (state.active) {
       state.pendingMessages = true;
-      logger.debug({ groupJid }, 'Container active, message queued');
+      logger.info({ groupJid }, 'Container active, message queued for later');
       return;
     }
 
@@ -122,8 +122,15 @@ export class GroupQueue {
   /**
    * Send a follow-up message to the active container via IPC file.
    * Returns true if the message was written, false if no active container.
+   *
+   * DISABLED: IPC polling not implemented in container, so always return false
+   * to force each message to spawn a new container.
    */
   sendMessage(groupJid: string, text: string): boolean {
+    // Always return false to disable piping and force new containers
+    return false;
+
+    /* Original implementation (disabled):
     const state = this.getGroup(groupJid);
     if (!state.active || !state.groupFolder) return false;
 
@@ -139,6 +146,7 @@ export class GroupQueue {
     } catch {
       return false;
     }
+    */
   }
 
   /**
@@ -154,6 +162,22 @@ export class GroupQueue {
       fs.writeFileSync(path.join(inputDir, '_close'), '');
     } catch {
       // ignore
+    }
+  }
+
+  /**
+   * Force kill the active container for a group.
+   * Used when IPC piping is disabled to immediately terminate after first response.
+   */
+  killContainer(groupJid: string): void {
+    const state = this.getGroup(groupJid);
+    if (!state.process) return;
+
+    logger.info({ groupJid }, 'Force killing container to enable immediate message processing');
+    try {
+      state.process.kill('SIGTERM');
+    } catch {
+      // ignore - process may have already exited
     }
   }
 
@@ -245,6 +269,8 @@ export class GroupQueue {
 
     const state = this.getGroup(groupJid);
 
+    logger.info({ groupJid, pendingMessages: state.pendingMessages, pendingTasks: state.pendingTasks.length }, 'Draining group after container finished');
+
     // Tasks first (they won't be re-discovered from SQLite like messages)
     if (state.pendingTasks.length > 0) {
       const task = state.pendingTasks.shift()!;
@@ -254,6 +280,7 @@ export class GroupQueue {
 
     // Then pending messages
     if (state.pendingMessages) {
+      logger.info({ groupJid }, 'Found pending messages, spawning new container');
       this.runForGroup(groupJid, 'drain');
       return;
     }
