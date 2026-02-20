@@ -168,6 +168,16 @@ function buildVolumeMounts(
     readonly: true,
   });
 
+  // Tools directory: CLI tools available to all groups (read-only)
+  const toolsDir = path.join(projectRoot, 'container', 'tools');
+  if (fs.existsSync(toolsDir)) {
+    mounts.push({
+      hostPath: toolsDir,
+      containerPath: '/workspace/tools',
+      readonly: true,
+    });
+  }
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(
@@ -186,7 +196,13 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']);
+  return readEnvFile([
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'ANTHROPIC_API_KEY',
+    'MS_GRAPH_CLIENT_ID',
+    'MS_GRAPH_REFRESH_TOKEN',
+    'MS_GRAPH_TENANT_ID',
+  ]);
 }
 
 function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {

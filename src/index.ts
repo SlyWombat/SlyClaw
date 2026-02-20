@@ -48,6 +48,22 @@ let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
 let messageLoopRunning = false;
 
+const SNAPPY_ACKS = [
+  "Oh great, another request. On it. 🙄",
+  "Ugh, fine. Give me a second.",
+  "Yes, yes, I heard you. Working on it...",
+  "Wow, can't you see I'm busy? Hold on.",
+  "This had better be important. Looking into it now.",
+  "Oh sure, drop everything for YOU. One moment.",
+  "Working on it. Try to contain your excitement.",
+  "Do I look like I have infinite speed? Processing...",
+  "I heard you the first time. Relax.",
+  "On it. Please stand by and try not to message again.",
+  "Oh, another one. How delightful. Computing...",
+  "Fine. I'll stop what I was doing and help you. Happy?",
+];
+let snappyAckIndex = 0;
+
 let whatsapp: WhatsAppChannel;
 const queue = new GroupQueue();
 
@@ -162,6 +178,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   };
 
   await whatsapp.setTyping(chatJid, true);
+  await whatsapp.sendMessage(chatJid, SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
+  snappyAckIndex++;
   let hadError = false;
   let outputSentToUser = false;
 
@@ -178,6 +196,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
+
+      // Kill container immediately after receiving output — IPC piping is disabled,
+      // so we spawn a new container per message. Killing here unblocks runAgent.
+      queue.killContainer(chatJid);
     }
 
     if (result.status === 'error') {
@@ -188,8 +210,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await whatsapp.setTyping(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
 
-  // Force kill container immediately since IPC piping is disabled
-  // This allows queued messages to be processed right away
+  // Also kill on error path in case no output was produced
   queue.killContainer(chatJid);
 
   if (output === 'error' || hadError) {

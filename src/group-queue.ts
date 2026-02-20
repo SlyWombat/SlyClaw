@@ -1,4 +1,4 @@
-import { ChildProcess } from 'child_process';
+import { ChildProcess, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -174,10 +174,21 @@ export class GroupQueue {
     if (!state.process) return;
 
     logger.info({ groupJid }, 'Force killing container to enable immediate message processing');
-    try {
-      state.process.kill('SIGTERM');
-    } catch {
-      // ignore - process may have already exited
+
+    // On Linux, killing the docker run process does not stop the container.
+    // Use `docker kill` directly on the container name to ensure it stops.
+    if (state.containerName) {
+      try {
+        execSync(`docker kill ${state.containerName}`, { stdio: 'pipe' });
+      } catch {
+        // Container may have already exited
+      }
+    } else {
+      try {
+        state.process.kill('SIGTERM');
+      } catch {
+        // ignore - process may have already exited
+      }
     }
   }
 
