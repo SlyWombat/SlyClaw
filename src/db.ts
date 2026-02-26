@@ -399,19 +399,28 @@ export function getDueTasks(): ScheduledTask[] {
     .all(now) as ScheduledTask[];
 }
 
+export function claimTask(id: string, nextRun: string | null): void {
+  db.prepare(
+    `
+    UPDATE scheduled_tasks
+    SET next_run = ?, status = CASE WHEN ? IS NULL THEN 'completed' ELSE status END
+    WHERE id = ?
+  `,
+  ).run(nextRun, nextRun, id);
+}
+
 export function updateTaskAfterRun(
   id: string,
-  nextRun: string | null,
   lastResult: string,
 ): void {
   const now = new Date().toISOString();
   db.prepare(
     `
     UPDATE scheduled_tasks
-    SET next_run = ?, last_run = ?, last_result = ?, status = CASE WHEN ? IS NULL THEN 'completed' ELSE status END
+    SET last_run = ?, last_result = ?
     WHERE id = ?
   `,
-  ).run(nextRun, now, lastResult, nextRun, id);
+  ).run(now, lastResult, id);
 }
 
 export function logTaskRun(log: TaskRunLog): void {

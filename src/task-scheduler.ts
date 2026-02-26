@@ -13,6 +13,7 @@ import {
 import { ContainerOutput, runContainerAgent, writeTasksSnapshot } from './container-runner.js';
 import {
   getAllTasks,
+  claimTask,
   getDueTasks,
   getTaskById,
   logTaskRun,
@@ -157,24 +158,12 @@ async function runTask(
     error,
   });
 
-  let nextRun: string | null = null;
-  if (task.schedule_type === 'cron') {
-    const interval = CronExpressionParser.parse(task.schedule_value, {
-      tz: TIMEZONE,
-    });
-    nextRun = interval.next().toISOString();
-  } else if (task.schedule_type === 'interval') {
-    const ms = parseInt(task.schedule_value, 10);
-    nextRun = new Date(Date.now() + ms).toISOString();
-  }
-  // 'once' tasks have no next run
-
   const resultSummary = error
     ? `Error: ${error}`
     : result
       ? result.slice(0, 200)
       : 'Completed';
-  updateTaskAfterRun(task.id, nextRun, resultSummary);
+  updateTaskAfterRun(task.id, resultSummary);
 }
 
 let schedulerRunning = false;
@@ -200,6 +189,17 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
         if (!currentTask || currentTask.status !== 'active') {
           continue;
         }
+
+        // Advance next_run immediately so subsequent polls don't re-enqueue this task
+        let nextRun: string | null = null;
+        if (currentTask.schedule_type === 'cron') {
+          const interval = CronExpressionParser.parse(currentTask.schedule_value, { tz: TIMEZONE });
+          nextRun = interval.next().toISOString();
+        } else if (currentTask.schedule_type === 'interval') {
+          const ms = parseInt(currentTask.schedule_value, 10);
+          nextRun = new Date(Date.now() + ms).toISOString();
+        }
+        claimTask(currentTask.id, nextRun);
 
         deps.queue.enqueueTask(
           currentTask.chat_jid,
