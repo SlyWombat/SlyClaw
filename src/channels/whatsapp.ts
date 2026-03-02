@@ -37,6 +37,7 @@ export class WhatsAppChannel implements Channel {
   private outgoingQueue: Array<{ jid: string; text: string }> = [];
   private flushing = false;
   private groupSyncTimerStarted = false;
+  private reconnectAttempts = 0;
 
   private opts: WhatsAppChannelOpts;
 
@@ -88,20 +89,21 @@ export class WhatsAppChannel implements Channel {
         logger.info({ reason, shouldReconnect, queuedMessages: this.outgoingQueue.length }, 'Connection closed');
 
         if (shouldReconnect) {
-          logger.info('Reconnecting...');
-          this.connectInternal().catch((err) => {
-            logger.error({ err }, 'Failed to reconnect, retrying in 5s');
-            setTimeout(() => {
-              this.connectInternal().catch((err2) => {
-                logger.error({ err: err2 }, 'Reconnection retry failed');
-              });
-            }, 5000);
-          });
+          // Exponential backoff: 2s, 4s, 8s, 16s, 32s, 60s max
+          const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts), 60000);
+          this.reconnectAttempts++;
+          logger.info({ attempt: this.reconnectAttempts, delayMs: delay }, 'Reconnecting...');
+          setTimeout(() => {
+            this.connectInternal().catch((err) => {
+              logger.error({ err }, 'Reconnect failed');
+            });
+          }, delay);
         } else {
           logger.info('Logged out. Run /setup to re-authenticate.');
           process.exit(0);
         }
       } else if (connection === 'open') {
+        this.reconnectAttempts = 0;
         this.connected = true;
         logger.info('Connected to WhatsApp');
 
@@ -123,13 +125,13 @@ export class WhatsAppChannel implements Channel {
           logger.error({ err }, 'Failed to flush outgoing queue'),
         );
 
-        // Sync group metadata on startup (respects 24h cache)
-        this.syncGroupMetadata().catch((err) =>
-          logger.error({ err }, 'Initial group sync failed'),
-        );
-        // Set up daily sync timer (only once)
+        // Sync group metadata on first connect only (not on reconnects)
+        // Daily timer handles subsequent syncs
         if (!this.groupSyncTimerStarted) {
           this.groupSyncTimerStarted = true;
+          this.syncGroupMetadata().catch((err) =>
+            logger.error({ err }, 'Initial group sync failed'),
+          );
           setInterval(() => {
             this.syncGroupMetadata().catch((err) =>
               logger.error({ err }, 'Periodic group sync failed'),
