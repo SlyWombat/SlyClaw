@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "auth": "tsx src/whatsapp-auth.ts",
+    "auth": "npm run build && node dist/whatsapp-auth.js",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
@@ -16,19 +16,19 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "better-sqlite3": "^11.8.1",
     "cron-parser": "^5.5.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
+    "puppeteer": "^23.0.0",
     "qrcode": "^1.5.4",
-    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
-    "@types/qrcode-terminal": "^0.12.2",
+    "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^4.0.18",
     "prettier": "^3.8.1",
     "tsx": "^4.19.0",

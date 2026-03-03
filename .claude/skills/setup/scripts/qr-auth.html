@@ -17,11 +17,9 @@
   <div class="instructions">Settings → Linked Devices → Link a Device</div>
 </div>
 <script>
-  // Persist start time across auto-refreshes
-  var startKey = 'nanoclaw_qr_start';
-  var start = localStorage.getItem(startKey);
-  if (!start) { start = Date.now().toString(); localStorage.setItem(startKey, start); }
-  var elapsed = Math.floor((Date.now() - parseInt(start)) / 1000);
+  // Start time is baked in at generation — immune to stale localStorage
+  var generated = {{GENERATED_AT}};
+  var elapsed = Math.floor((Date.now() - generated) / 1000);
   var remaining = Math.max(0, 60 - elapsed);
   var countdown = document.getElementById('countdown');
   var timer = document.getElementById('timer');
@@ -30,6 +28,5 @@
   if (remaining <= 0) {
     timer.textContent = 'QR code expired — a new one will appear shortly';
     timer.classList.add('urgent');
-    localStorage.removeItem(startKey);
   }
 </script></body></html>

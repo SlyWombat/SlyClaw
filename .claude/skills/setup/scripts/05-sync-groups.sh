@@ -39,17 +39,14 @@ log "Fetching group metadata directly"
 SYNC="failed"
 
 SYNC_OUTPUT=$(node -e "
-import makeWASocket, { useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } from '@whiskeysockets/baileys';
-import pino from 'pino';
-import path from 'path';
-import fs from 'fs';
-import Database from 'better-sqlite3';
+const { Client, LocalAuth } = (await import('whatsapp-web.js'));
+const { default: Database } = (await import('better-sqlite3'));
+const { default: fs } = (await import('fs'));
 
-const logger = pino({ level: 'silent' });
-const authDir = path.join('store', 'auth');
-const dbPath = path.join('store', 'messages.db');
+const authDir = 'store/wweb-auth';
+const dbPath = 'store/messages.db';
 
-if (!fs.existsSync(authDir)) {
+if (!fs.existsSync(authDir) || !fs.readdirSync(authDir).length) {
   console.error('NO_AUTH');
   process.exit(1);
 }
@@ -62,50 +59,57 @@ const upsert = db.prepare(
   'INSERT INTO chats (jid, name, last_message_time) VALUES (?, ?, ?) ON CONFLICT(jid) DO UPDATE SET name = excluded.name'
 );
 
-const { state, saveCreds } = await useMultiFileAuthState(authDir);
-
-const sock = makeWASocket({
-  auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
-  printQRInTerminal: false,
-  logger,
-  browser: Browsers.macOS('Chrome'),
-});
-
-// Timeout after 30s
+// Timeout after 90s (Puppeteer takes longer to start than Baileys)
 const timeout = setTimeout(() => {
   console.error('TIMEOUT');
   process.exit(1);
-}, 30000);
+}, 90000);
 
-sock.ev.on('creds.update', saveCreds);
-
-sock.ev.on('connection.update', async (update) => {
-  if (update.connection === 'open') {
-    try {
-      const groups = await sock.groupFetchAllParticipating();
-      const now = new Date().toISOString();
-      let count = 0;
-      for (const [jid, metadata] of Object.entries(groups)) {
-        if (metadata.subject) {
-          upsert.run(jid, metadata.subject, now);
-          count++;
-        }
-      }
-      console.log('SYNCED:' + count);
-    } catch (err) {
-      console.error('FETCH_ERROR:' + err.message);
-    } finally {
-      clearTimeout(timeout);
-      sock.end(undefined);
-      db.close();
-      process.exit(0);
-    }
-  } else if (update.connection === 'close') {
-    clearTimeout(timeout);
-    console.error('CONNECTION_CLOSED');
-    process.exit(1);
+const client = new Client({
+  authStrategy: new LocalAuth({ dataPath: authDir }),
+  puppeteer: {
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+           '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu']
   }
 });
+
+client.on('ready', async () => {
+  try {
+    const chats = await client.getChats();
+    const groups = chats.filter(c => c.isGroup);
+    const now = new Date().toISOString();
+    let count = 0;
+    for (const group of groups) {
+      const jid = group.id._serialized;
+      if (group.name) {
+        upsert.run(jid, group.name, now);
+        count++;
+      }
+    }
+    console.log('SYNCED:' + count);
+  } catch (err) {
+    console.error('FETCH_ERROR:' + err.message);
+  } finally {
+    clearTimeout(timeout);
+    await client.destroy();
+    db.close();
+    process.exit(0);
+  }
+});
+
+client.on('disconnected', () => {
+  clearTimeout(timeout);
+  console.error('CONNECTION_CLOSED');
+  process.exit(1);
+});
+
+client.on('qr', () => {
+  clearTimeout(timeout);
+  console.error('NO_AUTH');
+  process.exit(1);
+});
+
+await client.initialize();
 " --input-type=module 2>&1) || true
 
 log "Sync output: $SYNC_OUTPUT"

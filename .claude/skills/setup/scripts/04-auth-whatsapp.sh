@@ -15,11 +15,9 @@ cd "$PROJECT_ROOT"
 
 # Parse args
 METHOD=""
-PHONE=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --method) METHOD="$2"; shift 2 ;;
-    --phone)  PHONE="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -69,42 +67,20 @@ poll_file() {
   return 1
 }
 
-# Helper: get phone number from auth creds if available
-get_phone_number() {
-  if [ -f "$PROJECT_ROOT/store/auth/creds.json" ]; then
-    node -e "
-      const c = require('./store/auth/creds.json');
-      if (c.me && c.me.id) {
-        const phone = c.me.id.split(':')[0].split('@')[0];
-        process.stdout.write(phone);
-      }
-    " 2>/dev/null || true
-  fi
-}
-
 clean_stale_state() {
   log "Cleaning stale auth state"
-  rm -rf "$PROJECT_ROOT/store/auth" "$PROJECT_ROOT/store/qr-data.txt" "$PROJECT_ROOT/store/auth-status.txt"
+  rm -rf "$PROJECT_ROOT/store/wweb-auth" "$PROJECT_ROOT/store/qr-data.txt" "$PROJECT_ROOT/store/auth-status.txt"
 }
 
 emit_status() {
-  local auth_status="$1" status="$2" error="${3:-}" pairing_code="${4:-}"
-  local phone_number
-  phone_number=$(get_phone_number)
-
-  cat <<EOF
-=== NANOCLAW SETUP: AUTH_WHATSAPP ===
-AUTH_METHOD: $METHOD
-AUTH_STATUS: $auth_status
-EOF
-  [ -n "$pairing_code" ] && echo "PAIRING_CODE: $pairing_code"
-  [ -n "$phone_number" ] && echo "PHONE_NUMBER: $phone_number"
+  local auth_status="$1" status="$2" error="${3:-}"
+  echo "=== NANOCLAW SETUP: AUTH_WHATSAPP ==="
+  echo "AUTH_METHOD: $METHOD"
+  echo "AUTH_STATUS: $auth_status"
   echo "STATUS: $status"
   [ -n "$error" ] && echo "ERROR: $error"
-  cat <<EOF
-LOG: logs/setup.log
-=== END ===
-EOF
+  echo "LOG: logs/setup.log"
+  echo "=== END ==="
 }
 
 case "$METHOD" in
@@ -162,12 +138,15 @@ case "$METHOD" in
       });
     " >> "$LOG_FILE" 2>&1
 
-    # Open in browser (macOS)
+    # Open in browser (macOS or WSL2)
     if command -v open >/dev/null 2>&1; then
       open "$PROJECT_ROOT/store/qr-auth.html"
-      log "Opened QR auth page in browser"
+      log "Opened QR auth page in browser (macOS)"
+    elif command -v explorer.exe >/dev/null 2>&1; then
+      explorer.exe "$(wslpath -w "$PROJECT_ROOT/store/qr-auth.html")"
+      log "Opened QR auth page in Windows browser (WSL2)"
     else
-      log "WARNING: 'open' command not found, cannot open browser"
+      log "WARNING: cannot open browser automatically — open store/qr-auth.html manually"
     fi
 
     # Poll for completion (120s, 2s intervals)
@@ -227,93 +206,6 @@ SUCCESSEOF
 
     log "Timeout waiting for auth completion"
     emit_status "failed" "failed" "timeout"
-    exit 3
-    ;;
-
-  pairing-code)
-    if [ -z "$PHONE" ]; then
-      log "ERROR: --phone is required for pairing-code method"
-      cat <<EOF
-=== NANOCLAW SETUP: AUTH_WHATSAPP ===
-AUTH_METHOD: pairing-code
-AUTH_STATUS: failed
-STATUS: failed
-ERROR: missing_phone_number
-LOG: logs/setup.log
-=== END ===
-EOF
-      exit 4
-    fi
-
-    log "Starting pairing code auth flow (phone: $PHONE)"
-    clean_stale_state
-
-    # Start auth with pairing code in background
-    npx tsx src/whatsapp-auth.ts --pairing-code --phone "$PHONE" >> "$LOG_FILE" 2>&1 &
-    AUTH_PID=$!
-    log "Auth process started (PID $AUTH_PID)"
-
-    # Poll for pairing code or already_authenticated
-    log "Polling for pairing code (15s timeout)"
-    PAIRING_CODE=""
-    for i in $(seq 1 15); do
-      if [ -f "$PROJECT_ROOT/store/auth-status.txt" ]; then
-        STATUS_CONTENT=$(cat "$PROJECT_ROOT/store/auth-status.txt" 2>/dev/null || echo "")
-        case "$STATUS_CONTENT" in
-          already_authenticated)
-            log "Already authenticated"
-            emit_status "already_authenticated" "success"
-            exit 0
-            ;;
-          pairing_code:*)
-            PAIRING_CODE="${STATUS_CONTENT#pairing_code:}"
-            log "Got pairing code: $PAIRING_CODE"
-            break
-            ;;
-          failed:*)
-            log "Auth failed early: $STATUS_CONTENT"
-            emit_status "failed" "failed" "${STATUS_CONTENT#failed:}"
-            exit 1
-            ;;
-        esac
-      fi
-      sleep 1
-    done
-
-    if [ -z "$PAIRING_CODE" ]; then
-      log "Timeout waiting for pairing code"
-      emit_status "failed" "failed" "pairing_code_timeout"
-      exit 3
-    fi
-
-    # Poll for completion (120s, 2s intervals)
-    log "Polling for auth completion (120s timeout)"
-    for i in $(seq 1 60); do
-      if [ -f "$PROJECT_ROOT/store/auth-status.txt" ]; then
-        STATUS_CONTENT=$(cat "$PROJECT_ROOT/store/auth-status.txt" 2>/dev/null || echo "")
-        case "$STATUS_CONTENT" in
-          authenticated|already_authenticated)
-            log "Authentication successful: $STATUS_CONTENT"
-            emit_status "$STATUS_CONTENT" "success" "" "$PAIRING_CODE"
-            exit 0
-            ;;
-          failed:logged_out)
-            log "Auth failed: logged out"
-            emit_status "failed" "failed" "logged_out" "$PAIRING_CODE"
-            exit 1
-            ;;
-          failed:*)
-            log "Auth failed: $STATUS_CONTENT"
-            emit_status "failed" "failed" "${STATUS_CONTENT#failed:}" "$PAIRING_CODE"
-            exit 1
-            ;;
-        esac
-      fi
-      sleep 2
-    done
-
-    log "Timeout waiting for auth completion"
-    emit_status "failed" "failed" "timeout" "$PAIRING_CODE"
     exit 3
     ;;
 

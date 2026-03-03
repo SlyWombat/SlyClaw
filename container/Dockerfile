@@ -64,7 +64,7 @@ RUN groupmod -g $HOST_GID node && usermod -u $HOST_UID node
 RUN chown -R node:node /workspace
 
 # Create .claude directory for SDK debug logs
-RUN mkdir -p /home/node/.claude && chown -R node:node /home/node/.claude
+RUN mkdir -p /home/node/.claude/debug && chown -R node:node /home/node/.claude
 
 # Switch to non-root user (required for --dangerously-skip-permissions)
 USER node

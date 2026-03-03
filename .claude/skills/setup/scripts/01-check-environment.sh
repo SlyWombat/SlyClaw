@@ -67,7 +67,7 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
 fi
 
 HAS_AUTH="false"
-if [ -d "$PROJECT_ROOT/store/auth" ] && [ "$(ls -A "$PROJECT_ROOT/store/auth" 2>/dev/null)" ]; then
+if [ -d "$PROJECT_ROOT/store/wweb-auth" ] && [ "$(ls -A "$PROJECT_ROOT/store/wweb-auth" 2>/dev/null)" ]; then
   HAS_AUTH="true"
   log "WhatsApp auth credentials found"
 fi
