@@ -111,17 +111,17 @@ Skills we'd love to see:
 - `/add-discord` - Add Discord
 
 **Platform Support**
-- `/setup-windows` - Windows via WSL2 + Docker
+- ~~`/setup-windows`~~ ✅ `/setup-windows` - Windows via WSL2 + Docker (contributed)
 
 **Session Management**
 - `/add-clear` - Add a `/clear` command that compacts the conversation (summarizes context while preserving critical information in the same session). Requires figuring out how to trigger compaction programmatically via the Claude Agent SDK.
 
 ## Requirements
 
-- macOS or Linux
+- macOS, Linux, or Windows (via WSL2)
 - Node.js 20+
 - [Claude Code](https://claude.ai/download)
-- [Apple Container](https://github.com/apple/container) (macOS) or [Docker](https://docker.com/products/docker-desktop) (macOS/Linux)
+- [Apple Container](https://github.com/apple/container) (macOS) or [Docker](https://docker.com/products/docker-desktop) (macOS/Linux/Windows)
 
 ## Architecture
 
