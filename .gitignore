@@ -9,6 +9,9 @@ store/
 data/
 logs/
 
+# WhatsApp Web JS cache (auto-generated)
+.wwebjs_cache/
+
 # Groups - only track base structure and specific CLAUDE.md files
 groups/*
 !groups/main/
