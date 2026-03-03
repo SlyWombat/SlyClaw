@@ -1,3 +1,14 @@
+/*
+ *   ____  _            ____ _
+ *  / ___|| |_   _     / ___| | __ ___      __
+ *  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+ *   ___) | | |_| |   | |___| | (_| |\ V  V /
+ *  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+ *           |___/
+ *  Cunning. Sturdy. Open.
+ *
+ *  Based on the NanoClaw project. Modified by Sly Wombat.
+ */
 import path from 'path';
 
 import { readEnvFile } from './env.js';
@@ -22,7 +33,7 @@ const HOME_DIR = process.env.HOME || '/Users/user';
 export const MOUNT_ALLOWLIST_PATH = path.join(
   HOME_DIR,
   '.config',
-  'nanoclaw',
+  'slyclaw',
   'mount-allowlist.json',
 );
 export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
@@ -31,7 +42,7 @@ export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 export const MAIN_GROUP_FOLDER = 'main';
 
 export const CONTAINER_IMAGE =
-  process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
+  process.env.CONTAINER_IMAGE || 'slyclaw-agent:latest';
 export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,

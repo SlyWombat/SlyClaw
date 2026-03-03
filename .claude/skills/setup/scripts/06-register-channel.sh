@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+#   ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
 set -euo pipefail
 
 # 06-register-channel.sh — Write channel registration config, create group folders
@@ -37,7 +48,7 @@ done
 if [ -z "$JID" ] || [ -z "$NAME" ] || [ -z "$TRIGGER" ] || [ -z "$FOLDER" ]; then
   log "ERROR: Missing required args (--jid, --name, --trigger, --folder)"
   cat <<EOF
-=== NANOCLAW SETUP: REGISTER_CHANNEL ===
+=== SLYCLAW SETUP: REGISTER_CHANNEL ===
 STATUS: failed
 ERROR: missing_required_args
 LOG: logs/setup.log
@@ -83,7 +94,7 @@ if [ "$ASSISTANT_NAME" != "Andy" ]; then
 fi
 
 cat <<EOF
-=== NANOCLAW SETUP: REGISTER_CHANNEL ===
+=== SLYCLAW SETUP: REGISTER_CHANNEL ===
 JID: $JID
 NAME: $NAME
 FOLDER: $FOLDER

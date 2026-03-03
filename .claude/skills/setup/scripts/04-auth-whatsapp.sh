@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+#   ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
 set -euo pipefail
 
 # 04-auth-whatsapp.sh — Full WhatsApp auth flow with polling
@@ -25,7 +36,7 @@ done
 if [ -z "$METHOD" ]; then
   log "ERROR: --method flag is required"
   cat <<EOF
-=== NANOCLAW SETUP: AUTH_WHATSAPP ===
+=== SLYCLAW SETUP: AUTH_WHATSAPP ===
 AUTH_METHOD: unknown
 AUTH_STATUS: failed
 STATUS: failed
@@ -74,7 +85,7 @@ clean_stale_state() {
 
 emit_status() {
   local auth_status="$1" status="$2" error="${3:-}"
-  echo "=== NANOCLAW SETUP: AUTH_WHATSAPP ==="
+  echo "=== SLYCLAW SETUP: AUTH_WHATSAPP ==="
   echo "AUTH_METHOD: $METHOD"
   echo "AUTH_STATUS: $auth_status"
   echo "STATUS: $status"
@@ -160,7 +171,7 @@ case "$METHOD" in
             # Replace QR page with success page so browser auto-refresh shows it
             cat > "$PROJECT_ROOT/store/qr-auth.html" <<'SUCCESSEOF'
 <!DOCTYPE html>
-<html><head><title>NanoClaw - Connected!</title>
+<html><head><title>SlyClaw - Connected!</title>
 <style>
   body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
   .card { background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 24px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
@@ -173,7 +184,7 @@ case "$METHOD" in
   <h2>Connected to WhatsApp</h2>
   <p>You can close this tab.</p>
 </div>
-<script>localStorage.removeItem('nanoclaw_qr_start');</script>
+<script>localStorage.removeItem('slyclaw_qr_start');</script>
 </body></html>
 SUCCESSEOF
             emit_status "$STATUS_CONTENT" "success"
@@ -212,7 +223,7 @@ SUCCESSEOF
   qr-terminal)
     log "QR terminal method selected — manual flow"
     cat <<EOF
-=== NANOCLAW SETUP: AUTH_WHATSAPP ===
+=== SLYCLAW SETUP: AUTH_WHATSAPP ===
 AUTH_METHOD: qr-terminal
 AUTH_STATUS: manual
 PROJECT_PATH: $PROJECT_ROOT
@@ -226,7 +237,7 @@ EOF
   *)
     log "Unknown auth method: $METHOD"
     cat <<EOF
-=== NANOCLAW SETUP: AUTH_WHATSAPP ===
+=== SLYCLAW SETUP: AUTH_WHATSAPP ===
 AUTH_METHOD: $METHOD
 AUTH_STATUS: failed
 STATUS: failed

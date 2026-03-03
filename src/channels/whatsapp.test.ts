@@ -1,10 +1,21 @@
+/*
+ *   ____  _            ____ _
+ *  / ___|| |_   _     / ___| | __ ___      __
+ *  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+ *   ___) | | |_| |   | |___| | (_| |\ V  V /
+ *  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+ *           |___/
+ *  Cunning. Sturdy. Open.
+ *
+ *  Based on the NanoClaw project. Modified by Sly Wombat.
+ */
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 
 // --- Mocks ---
 
 vi.mock('../config.js', () => ({
-  STORE_DIR: '/tmp/nanoclaw-test-store',
+  STORE_DIR: '/tmp/slyclaw-test-store',
   ASSISTANT_NAME: 'Andy',
   ASSISTANT_HAS_OWN_NUMBER: false,
 }));

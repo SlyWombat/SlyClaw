@@ -1,3 +1,14 @@
+/*
+ *   ____  _            ____ _
+ *  / ___|| |_   _     / ___| | __ ___      __
+ *  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+ *   ___) | | |_| |   | |___| | (_| |\ V  V /
+ *  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+ *           |___/
+ *  Cunning. Sturdy. Open.
+ *
+ *  Based on the NanoClaw project. Modified by Sly Wombat.
+ */
 /**
  * WhatsApp Authentication Script
  *
@@ -93,11 +104,11 @@ async function authenticate(): Promise<void> {
       // Replace the QR page with a success page so the browser stops refreshing
       const htmlPath = path.join(STORE_DIR, 'qr-auth.html');
       try {
-        fs.writeFileSync(htmlPath, '<!DOCTYPE html><html><head><title>NanoClaw</title><style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}.card{background:#fff;border-radius:16px;padding:48px;box-shadow:0 4px 24px rgba(0,0,0,.1);text-align:center}h2{margin:0 0 8px;color:#25d366}p{color:#666;margin:8px 0 0}</style></head><body><div class="card"><h2>✓ Authenticated</h2><p>WhatsApp is connected. You can close this tab.</p></div></body></html>');
+        fs.writeFileSync(htmlPath, '<!DOCTYPE html><html><head><title>SlyClaw</title><style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}.card{background:#fff;border-radius:16px;padding:48px;box-shadow:0 4px 24px rgba(0,0,0,.1);text-align:center}h2{margin:0 0 8px;color:#25d366}p{color:#666;margin:8px 0 0}</style></head><body><div class="card"><h2>✓ Authenticated</h2><p>WhatsApp is connected. You can close this tab.</p></div></body></html>');
       } catch { /* best-effort */ }
       console.log('\n✓ Successfully authenticated with WhatsApp!');
       console.log('  Session saved to store/wweb-auth/');
-      console.log('  You can now start the NanoClaw service.\n');
+      console.log('  You can now start the SlyClaw service.\n');
     }
     // Gracefully shut down Chrome so it flushes session data to disk before exit
     await client.destroy();

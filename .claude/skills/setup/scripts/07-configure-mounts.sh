@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+#   ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
 set -euo pipefail
 
 # 07-configure-mounts.sh — Write mount allowlist config file
@@ -11,7 +22,7 @@ mkdir -p "$PROJECT_ROOT/logs"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [configure-mounts] $*" >> "$LOG_FILE"; }
 
-CONFIG_DIR="$HOME/.config/nanoclaw"
+CONFIG_DIR="$HOME/.config/slyclaw"
 CONFIG_FILE="$CONFIG_DIR/mount-allowlist.json"
 
 # Parse args
@@ -47,7 +58,7 @@ else
   if ! echo "$INPUT" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{JSON.parse(d)}catch(e){process.exit(1)}})" 2>/dev/null; then
     log "ERROR: Invalid JSON input"
     cat <<EOF
-=== NANOCLAW SETUP: CONFIGURE_MOUNTS ===
+=== SLYCLAW SETUP: CONFIGURE_MOUNTS ===
 PATH: $CONFIG_FILE
 ALLOWED_ROOTS: 0
 NON_MAIN_READ_ONLY: unknown
@@ -70,7 +81,7 @@ fi
 log "Allowlist configured: $ALLOWED_ROOTS roots, nonMainReadOnly=$NON_MAIN_READ_ONLY"
 
 cat <<EOF
-=== NANOCLAW SETUP: CONFIGURE_MOUNTS ===
+=== SLYCLAW SETUP: CONFIGURE_MOUNTS ===
 PATH: $CONFIG_FILE
 ALLOWED_ROOTS: $ALLOWED_ROOTS
 NON_MAIN_READ_ONLY: $NON_MAIN_READ_ONLY

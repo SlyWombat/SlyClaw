@@ -1,3 +1,14 @@
+/*
+ *   ____  _            ____ _
+ *  / ___|| |_   _     / ___| | __ ___      __
+ *  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+ *   ___) | | |_| |   | |___| | (_| |\ V  V /
+ *  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+ *           |___/
+ *  Cunning. Sturdy. Open.
+ *
+ *  Based on the NanoClaw project. Modified by Sly Wombat.
+ */
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -316,7 +327,7 @@ async function startMessageLoop(): Promise<void> {
   }
   messageLoopRunning = true;
 
-  logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
+  logger.info(`SlyClaw running (trigger: @${ASSISTANT_NAME})`);
 
   while (true) {
     try {
@@ -432,7 +443,7 @@ function ensureContainerSystemRunning(): void {
       '║  1. Start Docker: sudo systemctl start docker                 ║',
     );
     console.error(
-      '║  2. Restart NanoClaw                                          ║',
+      '║  2. Restart SlyClaw                                          ║',
     );
     console.error(
       '╚════════════════════════════════════════════════════════════════╝\n',
@@ -498,7 +509,7 @@ const isDirectRun =
 
 if (isDirectRun) {
   main().catch((err) => {
-    logger.error({ err }, 'Failed to start NanoClaw');
+    logger.error({ err }, 'Failed to start SlyClaw');
     process.exit(1);
   });
 }

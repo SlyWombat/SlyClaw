@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+#   ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
 set -euo pipefail
 
 # 02-install-deps.sh — Run npm install and verify key packages
@@ -20,7 +31,7 @@ if npm install >> "$LOG_FILE" 2>&1; then
 else
   log "npm install failed"
   cat <<EOF
-=== NANOCLAW SETUP: INSTALL_DEPS ===
+=== SLYCLAW SETUP: INSTALL_DEPS ===
 PACKAGES: failed
 STATUS: failed
 ERROR: npm_install_failed
@@ -41,7 +52,7 @@ done
 if [ -n "$MISSING" ]; then
   log "Missing packages after install:$MISSING"
   cat <<EOF
-=== NANOCLAW SETUP: INSTALL_DEPS ===
+=== SLYCLAW SETUP: INSTALL_DEPS ===
 PACKAGES: failed
 STATUS: failed
 ERROR: missing_packages:$MISSING
@@ -54,7 +65,7 @@ fi
 log "All key packages verified"
 
 cat <<EOF
-=== NANOCLAW SETUP: INSTALL_DEPS ===
+=== SLYCLAW SETUP: INSTALL_DEPS ===
 PACKAGES: installed
 STATUS: success
 LOG: logs/setup.log

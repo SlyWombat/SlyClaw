@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+#   ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
 set -euo pipefail
 
 # 01-check-environment.sh — Detect OS, Node, container runtimes, existing config
@@ -88,7 +99,7 @@ log "Environment check complete"
 
 # Output structured status block
 cat <<EOF
-=== NANOCLAW SETUP: CHECK_ENVIRONMENT ===
+=== SLYCLAW SETUP: CHECK_ENVIRONMENT ===
 PLATFORM: $PLATFORM
 NODE_VERSION: $NODE_VERSION
 NODE_OK: $NODE_OK

@@ -1,5 +1,16 @@
+/*
+ *   ____  _            ____ _
+ *  / ___|| |_   _     / ___| | __ ___      __
+ *  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+ *   ___) | | |_| |   | |___| | (_| |\ V  V /
+ *  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+ *           |___/
+ *  Cunning. Sturdy. Open.
+ *
+ *  Based on the NanoClaw project. Modified by Sly Wombat.
+ */
 /**
- * Stdio MCP Server for NanoClaw
+ * Stdio MCP Server for SlyClaw
  * Standalone process that agent teams subagents can inherit.
  * Reads context from environment variables, writes IPC files for the host.
  */
@@ -16,9 +27,9 @@ const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
 const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 
 // Context from environment variables (set by the agent runner)
-const chatJid = process.env.NANOCLAW_CHAT_JID!;
-const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
-const isMain = process.env.NANOCLAW_IS_MAIN === '1';
+const chatJid = process.env.SLYCLAW_CHAT_JID!;
+const groupFolder = process.env.SLYCLAW_GROUP_FOLDER!;
+const isMain = process.env.SLYCLAW_IS_MAIN === '1';
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -35,7 +46,7 @@ function writeIpcFile(dir: string, data: object): string {
 }
 
 const server = new McpServer({
-  name: 'nanoclaw',
+  name: 'slyclaw',
   version: '1.0.0',
 });
 

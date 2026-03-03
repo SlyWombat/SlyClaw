@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+#   ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
 set -euo pipefail
 
 # 09-verify.sh — End-to-end health check of the full installation
@@ -25,9 +36,9 @@ esac
 # 1. Check service status
 SERVICE="not_found"
 if [ "$PLATFORM" = "macos" ]; then
-  if launchctl list 2>/dev/null | grep -q "com.nanoclaw"; then
+  if launchctl list 2>/dev/null | grep -q "com.slyclaw"; then
     # Check if it has a PID (actually running)
-    LAUNCHCTL_LINE=$(launchctl list 2>/dev/null | grep "com.nanoclaw" || true)
+    LAUNCHCTL_LINE=$(launchctl list 2>/dev/null | grep "com.slyclaw" || true)
     PID_FIELD=$(echo "$LAUNCHCTL_LINE" | awk '{print $1}')
     if [ "$PID_FIELD" != "-" ] && [ -n "$PID_FIELD" ]; then
       SERVICE="running"
@@ -36,9 +47,9 @@ if [ "$PLATFORM" = "macos" ]; then
     fi
   fi
 elif [ "$PLATFORM" = "linux" ]; then
-  if systemctl --user is-active nanoclaw >/dev/null 2>&1; then
+  if systemctl --user is-active slyclaw >/dev/null 2>&1; then
     SERVICE="running"
-  elif systemctl --user list-unit-files 2>/dev/null | grep -q "nanoclaw"; then
+  elif systemctl --user list-unit-files 2>/dev/null | grep -q "slyclaw"; then
     SERVICE="stopped"
   fi
 fi
@@ -78,7 +89,7 @@ log "Registered groups: $REGISTERED_GROUPS"
 
 # 6. Check mount allowlist
 MOUNT_ALLOWLIST="missing"
-if [ -f "$HOME/.config/nanoclaw/mount-allowlist.json" ]; then
+if [ -f "$HOME/.config/slyclaw/mount-allowlist.json" ]; then
   MOUNT_ALLOWLIST="configured"
 fi
 log "Mount allowlist: $MOUNT_ALLOWLIST"
@@ -92,7 +103,7 @@ fi
 log "Verification complete: $STATUS"
 
 cat <<EOF
-=== NANOCLAW SETUP: VERIFY ===
+=== SLYCLAW SETUP: VERIFY ===
 SERVICE: $SERVICE
 CONTAINER_RUNTIME: $CONTAINER_RUNTIME
 CREDENTIALS: $CREDENTIALS

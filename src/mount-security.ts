@@ -1,10 +1,21 @@
+/*
+ *   ____  _            ____ _
+ *  / ___|| |_   _     / ___| | __ ___      __
+ *  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+ *   ___) | | |_| |   | |___| | (_| |\ V  V /
+ *  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+ *           |___/
+ *  Cunning. Sturdy. Open.
+ *
+ *  Based on the NanoClaw project. Modified by Sly Wombat.
+ */
 /**
- * Mount Security Module for NanoClaw
+ * Mount Security Module for SlyClaw
  *
  * Validates additional mounts against an allowlist stored OUTSIDE the project root.
  * This prevents container agents from modifying security configuration.
  *
- * Allowlist location: ~/.config/nanoclaw/mount-allowlist.json
+ * Allowlist location: ~/.config/slyclaw/mount-allowlist.json
  */
 import fs from 'fs';
 import path from 'path';

@@ -1,4 +1,14 @@
-# NanoClaw Agent Container
+# ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
+# SlyClaw Agent Container
 # Runs Claude Agent SDK in isolated Linux VM with browser automation
 
 FROM node:22-slim

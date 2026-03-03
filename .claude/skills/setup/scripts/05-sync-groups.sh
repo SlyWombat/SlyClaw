@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+#   ____  _            ____ _
+#  / ___|| |_   _     / ___| | __ ___      __
+#  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+#   ___) | | |_| |   | |___| | (_| |\ V  V /
+#  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+#           |___/
+#  Cunning. Sturdy. Open.
+#
+#  Based on the NanoClaw project. Modified by Sly Wombat.
+#
 set -euo pipefail
 
 # 05-sync-groups.sh — Connect to WhatsApp, fetch group metadata, write to DB, exit.
@@ -22,7 +33,7 @@ if npm run build >> "$LOG_FILE" 2>&1; then
 else
   log "Build failed"
   cat <<EOF
-=== NANOCLAW SETUP: SYNC_GROUPS ===
+=== SLYCLAW SETUP: SYNC_GROUPS ===
 BUILD: failed
 SYNC: skipped
 GROUPS_IN_DB: 0
@@ -131,7 +142,7 @@ if [ "$SYNC" != "success" ]; then
 fi
 
 cat <<EOF
-=== NANOCLAW SETUP: SYNC_GROUPS ===
+=== SLYCLAW SETUP: SYNC_GROUPS ===
 BUILD: $BUILD
 SYNC: $SYNC
 GROUPS_IN_DB: $GROUPS_IN_DB
