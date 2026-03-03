@@ -1,3 +1,15 @@
+<!--
+   ____  _            ____ _
+  / ___|| |_   _     / ___| | __ ___      __
+  \___ \| | | | |   | |   | |/ _` \ \ /\ / /
+   ___) | | |_| |   | |___| | (_| |\ V  V /
+  |____/|_|\__, |    \____|_|\__,_| \_/\_/
+           |___/
+  Cunning. Sturdy. Open.
+
+  Based on the NanoClaw project. Modified by Sly Wombat.
+-->
+
 <p align="center">
   <img src="assets/slyclaw-logo.png" alt="SlyClaw" width="400">
 </p>
@@ -6,20 +18,19 @@
   This is a clone of Nanoclaw. Lightweight and built to be understood and customized for your own needs. I have updated it to use a different WhatsApp API and interface with robust error handling. Provided a framework for graph api connection to Microsoft for accessing any O365 data as needed. Various other bug fixes and changes that led me down a path of too much Claude time spend :-) 
 </p>
 
-
 **New:** First AI assistant to support [Agent Swarms](https://code.claude.com/docs/en/agent-teams). Spin up teams of agents that collaborate in your chat.
 
 ## Why I Built This
 
-[OpenClaw](https://github.com/openclaw/openclaw) is an impressive project with a great vision. But I can't sleep well running software I don't understand with access to my life. OpenClaw has 52+ modules, 8 config management files, 45+ dependencies, and abstractions for 15 channel providers. Security is application-level (allowlists, pairing codes) rather than OS isolation. Everything runs in one Node process with shared memory.
+[NanoClaw](https://github.com/gavrielc/nanoclaw) is a great minimal Claude assistant, itself inspired by [OpenClaw](https://github.com/openclaw/openclaw). SlyClaw is a personal fork with customizations by Sly Wombat.
 
-NanoClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. Agents run in actual Linux containers with filesystem isolation, not behind permission checks.
+SlyClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. Agents run in actual Linux containers with filesystem isolation, not behind permission checks.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/gavrielc/nanoclaw.git
-cd nanoclaw
+git clone https://github.com/SlyWombat/SlyClaw.git
+cd SlyClaw
 claude
 ```
 
@@ -54,19 +65,19 @@ Then run `/setup`. Claude Code handles everything: dependencies, authentication,
 
 ## Usage
 
-Talk to your assistant with the trigger word (default: `@Andy`):
+Talk to your assistant with the trigger word (default: `@Nano`):
 
 ```
-@Andy send an overview of the sales pipeline every weekday morning at 9am (has access to my Obsidian vault folder)
-@Andy review the git history for the past week each Friday and update the README if there's drift
-@Andy every Monday at 8am, compile news on AI developments from Hacker News and TechCrunch and message me a briefing
+@Nano send an overview of the sales pipeline every weekday morning at 9am (has access to my Obsidian vault folder)
+@Nano review the git history for the past week each Friday and update the README if there's drift
+@Nano every Monday at 8am, compile news on AI developments from Hacker News and TechCrunch and message me a briefing
 ```
 
 From the main channel (your self-chat), you can manage groups and tasks:
 ```
-@Andy list all scheduled tasks across groups
-@Andy pause the Monday briefing task
-@Andy join the Family Chat group
+@Nano list all scheduled tasks across groups
+@Nano pause the Monday briefing task
+@Nano join the Family Chat group
 ```
 
 ## Customizing
@@ -86,7 +97,7 @@ The codebase is small enough that Claude can safely modify it.
 
 **Don't add features. Add skills.**
 
-If you want to add Telegram support, don't create a PR that adds Telegram alongside WhatsApp. Instead, contribute a skill file (`.claude/skills/add-telegram/SKILL.md`) that teaches Claude Code how to transform a NanoClaw installation to use Telegram.
+If you want to add Telegram support, don't create a PR that adds Telegram alongside WhatsApp. Instead, contribute a skill file (`.claude/skills/add-telegram/SKILL.md`) that teaches Claude Code how to transform a SlyClaw installation to use Telegram.
 
 Users then run `/add-telegram` on their fork and get clean code that does exactly what they need, not a bloated system trying to support every use case.
 
@@ -115,7 +126,7 @@ Skills we'd love to see:
 ## Architecture
 
 ```
-WhatsApp (baileys) --> SQLite --> Polling loop --> Container (Claude Agent SDK) --> Response
+WhatsApp (whatsapp-web.js) --> SQLite --> Polling loop --> Container (Claude Agent SDK) --> Response
 ```
 
 Single Node.js process. Agents execute in isolated Linux containers with mounted directories. Per-group message queue with concurrency control. IPC via filesystem.
@@ -143,7 +154,7 @@ On macOS, Apple Container is lightweight, fast, and optimized for Apple silicon.
 
 **Can I run this on Linux?**
 
-Yes. Run `/setup` and it will automatically configure Docker as the container runtime. Thanks to [@dotsetgreg](https://github.com/dotsetgreg) for contributing the `/convert-to-docker` skill.
+Yes. Run `/setup` and it will automatically configure Docker as the container runtime.
 
 **Is this secure?**
 
@@ -151,7 +162,7 @@ Agents run in containers, not behind application-level permission checks. They c
 
 **Why no configuration files?**
 
-We don't want configuration sprawl. Every user should customize it to so that the code matches exactly what they want rather than configuring a generic system. If you like having config files, tell Claude to add them.
+We don't want configuration sprawl. Every user should customize it so that the code matches exactly what they want rather than configuring a generic system. If you like having config files, tell Claude to add them.
 
 **How do I debug issues?**
 
@@ -159,7 +170,7 @@ Ask Claude Code. "Why isn't the scheduler running?" "What's in the recent logs?"
 
 **Why isn't the setup working for me?**
 
-I don't know. Run `claude`, then run `/debug`. If claude finds an issue that is likely affecting other users, open a PR to modify the setup SKILL.md.
+Run `claude`, then run `/debug`. If Claude finds an issue that is likely affecting other users, open a PR to modify the setup SKILL.md.
 
 **What changes will be accepted into the codebase?**
 
@@ -168,10 +179,6 @@ Security fixes, bug fixes, and clear improvements to the base configuration. Tha
 Everything else (new capabilities, OS compatibility, hardware support, enhancements) should be contributed as skills.
 
 This keeps the base system minimal and lets every user customize their installation without inheriting features they don't want.
-
-## Community
-
-Questions? Ideas? [Join the Discord](https://discord.gg/VGWXrf8x).
 
 ## License
 
