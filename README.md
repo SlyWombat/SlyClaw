@@ -1,16 +1,11 @@
 <p align="center">
-  <img src="assets/nanoclaw-logo.png" alt="NanoClaw" width="400">
+  <img src="assets/slyclaw-logo.png" alt="SlyClaw" width="400">
 </p>
 
 <p align="center">
-  My personal Claude assistant that runs securely in containers. Lightweight and built to be understood and customized for your own needs.
+  This is a clone of Nanoclaw. Lightweight and built to be understood and customized for your own needs. I have updated it to use a different WhatsApp API and interface with robust error handling. Provided a framework for graph api connection to Microsoft for accessing any O365 data as needed. Various other bug fixes and changes that led me down a path of too much Claude time spend :-) 
 </p>
 
-<p align="center">
-  <a href="README_zh.md">中文</a>&nbsp; • &nbsp;
-  <a href="https://discord.gg/VGWXrf8x"><img src="https://img.shields.io/discord/1470188214710046894?label=Discord&logo=discord&v=2" alt="Discord" valign="middle"></a>&nbsp; • &nbsp;
-  <a href="repo-tokens"><img src="repo-tokens/badge.svg" alt="34.9k tokens, 17% of context window" valign="middle"></a>
-</p>
 
 **New:** First AI assistant to support [Agent Swarms](https://code.claude.com/docs/en/agent-teams). Spin up teams of agents that collaborate in your chat.
 
