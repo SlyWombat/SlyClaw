@@ -1,6 +1,6 @@
-# NanoClaw Requirements
+# SlyClaw Requirements
 
-Original requirements and design decisions from the project creator.
+Original requirements and design decisions from management.
 
 ---
 
@@ -8,7 +8,7 @@ Original requirements and design decisions from the project creator.
 
 This is a lightweight, secure alternative to OpenClaw (formerly ClawBot). That project became a monstrosity - 4-5 different processes running different gateways, endless configuration files, endless integrations. It's a security nightmare where agents don't run in isolated processes; there's all kinds of leaky workarounds trying to prevent them from accessing parts of the system they shouldn't. It's impossible for anyone to realistically understand the whole codebase. When you run it you're kind of just yoloing it.
 
-NanoClaw gives you the core functionality without that mess.
+SlyClaw gives you the core functionality without that mess.
 
 ---
 
@@ -20,11 +20,11 @@ The entire codebase should be something you can read and understand. One Node.js
 
 ### Security Through True Isolation
 
-Instead of application-level permission systems trying to prevent agents from accessing things, agents run in actual Linux containers (Apple Container). The isolation is at the OS level. Agents can only see what's explicitly mounted. Bash access is safe because commands run inside the container, not on your Mac.
+Instead of application-level permission systems trying to prevent agents from accessing things, agents run in actual Linux containers. The isolation is at the OS level. Agents can only see what's explicitly mounted. Bash access is safe because commands run inside the container, not on your computer.
 
 ### Built for One User
 
-This isn't a framework or a platform. It's working software for my specific needs. I use WhatsApp and Email, so it supports WhatsApp and Email. I don't use Telegram, so it doesn't support Telegram. I add the integrations I actually want, not every possible integration.
+This isn't a framework or a platform. It's working software for my specific needs. I use WhatsApp and Email, so it supports WhatsApp and Email. I add the integrations I actually want, not every possible integration.
 
 ### Customization = Code Changes
 
@@ -53,11 +53,6 @@ Skills to add or switch to different messaging platforms:
 - `/add-discord` - Add Discord as an input channel
 - `/add-sms` - Add SMS via Twilio or similar
 - `/convert-to-telegram` - Replace WhatsApp with Telegram entirely
-
-### Container Runtime
-The project currently uses Apple Container (macOS-only). We need:
-- `/convert-to-docker` - Replace Apple Container with standard Docker
-- This unlocks Linux support and broader deployment options
 
 ### Platform Support
 - `/setup-linux` - Make the full setup work on Linux (depends on Docker conversion)
@@ -104,7 +99,7 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - Sessions auto-compact when context gets too long, preserving critical information
 
 ### Container Isolation
-- All agents run inside Apple Container (lightweight Linux VMs)
+- All agents run inside a Container (lightweight Linux VMs)
 - Each agent invocation spawns a container with mounted directories
 - Containers provide filesystem isolation - agents can only see mounted paths
 - Bash access is safe because commands run inside the container, not on the host
@@ -138,7 +133,7 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 ## Integration Points
 
 ### WhatsApp
-- Using baileys library for WhatsApp Web connection
+- Using our own library for WhatsApp Web connection
 - Messages stored in SQLite, polled by router
 - QR code authentication during setup
 
@@ -175,7 +170,7 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - `/customize` - General-purpose skill for adding capabilities (new channels like Telegram, new integrations, behavior changes)
 
 ### Deployment
-- Runs on local Mac via launchd
+- Runs on local computer in the background ensuring if the host computer is rebooted, all required services are restarted in the background
 - Single Node.js process handles everything
 
 ---
@@ -184,8 +179,8 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 
 These are the creator's settings, stored here for reference:
 
-- **Trigger**: `@Andy` (case insensitive)
-- **Response prefix**: `Andy:`
+- **Trigger**: `@Nano` (case insensitive)
+- **Response prefix**: `Nano:`
 - **Persona**: Default Claude (no custom personality)
 - **Main channel**: Self-chat (messaging yourself in WhatsApp)
 
@@ -193,4 +188,4 @@ These are the creator's settings, stored here for reference:
 
 ## Project Name
 
-**NanoClaw** - A reference to Clawdbot (now OpenClaw).
+**SlyClaw** - A reference to Clawdbot (now OpenClaw).
