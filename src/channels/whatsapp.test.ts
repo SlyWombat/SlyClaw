@@ -16,7 +16,7 @@ import { EventEmitter } from 'events';
 
 vi.mock('../config.js', () => ({
   STORE_DIR: '/tmp/slyclaw-test-store',
-  ASSISTANT_NAME: 'Andy',
+  ASSISTANT_NAME: 'Nano',
   ASSISTANT_HAS_OWN_NUMBER: false,
 }));
 
@@ -93,7 +93,7 @@ function createTestOpts(overrides?: Partial<WhatsAppChannelOpts>): WhatsAppChann
       'registered@g.us': {
         name: 'Test Group',
         folder: 'test-group',
-        trigger: '@Andy',
+        trigger: '@Nano',
         added_at: '2024-01-01T00:00:00.000Z',
       },
     })),
@@ -163,7 +163,7 @@ describe('WhatsAppChannel', () => {
       // Group messages get prefixed when flushed; @g.us JID is unchanged
       expect(fakeClient.sendMessage).toHaveBeenCalledWith(
         'test@g.us',
-        'Andy: Queued message',
+        'Nano: Queued message',
       );
     });
 
@@ -264,7 +264,7 @@ describe('WhatsAppChannel', () => {
       const ts = Math.floor(Date.now() / 1000);
       await triggerMessage({
         from: 'registered@g.us',
-        body: 'Hello Andy',
+        body: 'Hello Nano',
         author: '5551234@s.whatsapp.net',
         fromMe: false,
         timestamp: ts,
@@ -280,7 +280,7 @@ describe('WhatsAppChannel', () => {
         'registered@g.us',
         expect.objectContaining({
           id: 'msg-1',
-          content: 'Hello Andy',
+          content: 'Hello Nano',
           sender_name: 'Alice',
           is_from_me: false,
         }),
@@ -379,7 +379,7 @@ describe('WhatsAppChannel', () => {
           '1234567890@s.whatsapp.net': {
             name: 'Self Chat',
             folder: 'self-chat',
-            trigger: '@Andy',
+            trigger: '@Nano',
             added_at: '2024-01-01T00:00:00.000Z',
           },
         })),
@@ -444,7 +444,7 @@ describe('WhatsAppChannel', () => {
 
       await channel.sendMessage('test@g.us', 'Hello');
       // Group messages get prefixed; @g.us JID is unchanged
-      expect(fakeClient.sendMessage).toHaveBeenCalledWith('test@g.us', 'Andy: Hello');
+      expect(fakeClient.sendMessage).toHaveBeenCalledWith('test@g.us', 'Nano: Hello');
     });
 
     it('converts @s.whatsapp.net to @c.us when calling sendMessage', async () => {
@@ -454,7 +454,7 @@ describe('WhatsAppChannel', () => {
       await connectChannel(channel);
 
       await channel.sendMessage('123@s.whatsapp.net', 'Hello');
-      expect(fakeClient.sendMessage).toHaveBeenCalledWith('123@c.us', 'Andy: Hello');
+      expect(fakeClient.sendMessage).toHaveBeenCalledWith('123@c.us', 'Nano: Hello');
     });
 
     it('queues message when disconnected', async () => {
@@ -495,9 +495,9 @@ describe('WhatsAppChannel', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(fakeClient.sendMessage).toHaveBeenCalledTimes(3);
-      expect(fakeClient.sendMessage).toHaveBeenNthCalledWith(1, 'test@g.us', 'Andy: First');
-      expect(fakeClient.sendMessage).toHaveBeenNthCalledWith(2, 'test@g.us', 'Andy: Second');
-      expect(fakeClient.sendMessage).toHaveBeenNthCalledWith(3, 'test@g.us', 'Andy: Third');
+      expect(fakeClient.sendMessage).toHaveBeenNthCalledWith(1, 'test@g.us', 'Nano: First');
+      expect(fakeClient.sendMessage).toHaveBeenNthCalledWith(2, 'test@g.us', 'Nano: Second');
+      expect(fakeClient.sendMessage).toHaveBeenNthCalledWith(3, 'test@g.us', 'Nano: Third');
     });
   });
 
