@@ -268,10 +268,21 @@ export async function callOllama(
 ): Promise<string> {
   const history = getOllamaHistory(groupFolder);
 
+  // Prepend a clear identity preamble so the model knows it is Ollama/Qwen,
+  // not Claude. The CLAUDE.md system prompt is written for the container agent
+  // and would otherwise confuse local models into thinking they are Claude.
+  const ollamaPreamble =
+    `You are Nano, a helpful AI assistant running locally via Ollama (model: ${model}).\n` +
+    `You have two tools available: web_search and fetch_url.\n` +
+    `You do NOT have access to bash, files, containers, or other tools mentioned below.\n` +
+    `Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n` +
+    `---\n`;
+  const fullSystemPrompt = ollamaPreamble + systemPrompt;
+
   // Cast history to OllamaApiMessage[] — safe because history only contains
   // role:'system'|'user'|'assistant' entries, which are valid OllamaApiMessage subtypes.
   const messages: OllamaApiMessage[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: fullSystemPrompt },
     ...(history as OllamaApiMessage[]),
     { role: 'user', content: userMessage },
   ];
