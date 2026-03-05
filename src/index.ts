@@ -33,6 +33,7 @@ import {
   serializeLlm,
   setGroupLlm,
 } from './llm.js';
+import { DelegateToClaudeError } from './ollama-tools.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
@@ -241,6 +242,11 @@ async function runOllamaRequest(
     }
     return 'success';
   } catch (err: unknown) {
+    if (err instanceof DelegateToClaudeError) {
+      logger.info({ group: group.name, model, reason: err.message }, 'Ollama delegating to Claude');
+      await whatsapp.sendMessage(chatJid, `_(handing off to Claude: ${err.message})_`);
+      return 'fallback';
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error({ group: group.name, model, err }, 'Ollama request failed');
     await whatsapp.sendMessage(

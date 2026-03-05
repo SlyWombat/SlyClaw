@@ -16,6 +16,17 @@ import { logger } from './logger.js';
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Thrown when the local model explicitly requests delegation to the Claude
+ * container agent (e.g. the model called the `delegate_to_claude` tool).
+ */
+export class DelegateToClaudeError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'DelegateToClaudeError';
+  }
+}
+
 export interface OllamaToolCall {
   function: {
     name: string;
@@ -79,6 +90,24 @@ const OLLAMA_TOOLS = [
           },
         },
         required: ['url'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'delegate_to_claude',
+      description:
+        'Hand off this task to the Claude agent. Use this when the request requires: scheduling tasks or reminders, reading or writing files, running commands, managing groups, accessing the database, or any capability beyond web search and URL fetching.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: {
+            type: 'string',
+            description: 'Brief reason why Claude is needed (e.g. "user wants to schedule a reminder").',
+          },
+        },
+        required: ['reason'],
       },
     },
   },
@@ -266,6 +295,10 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       const url = typeof args.url === 'string' ? args.url : String(args.url ?? '');
       if (!url) return 'Error: url parameter is required';
       return await fetchUrl(url);
+    }
+    if (name === 'delegate_to_claude') {
+      const reason = typeof args.reason === 'string' ? args.reason : 'complex task';
+      throw new DelegateToClaudeError(reason);
     }
     return `Unknown tool: ${name}`;
   } catch (err) {
