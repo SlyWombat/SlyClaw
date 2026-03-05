@@ -158,21 +158,20 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 
 ### Local LLM — Ollama + Qwen2.5
 
-SlyClaw ships with first-class support for local inference via [Ollama](https://ollama.com). The `/setup` skill automatically installs Ollama and pulls Qwen2.5 models sized for the host hardware.
+SlyClaw ships with first-class support for local inference via [Ollama](https://ollama.com). The `/setup` skill automatically installs Ollama in a Docker container and pulls Qwen2.5 models sized for the host hardware.
 
 **Why Qwen2.5?**
 - Best-in-class open-weight model at every size tier (0.5B–72B)
 - Strong multilingual support
-- Dedicated `qwen2.5-coder` variant for programming tasks
 - Available through Ollama with efficient quantized formats (Q4_K_M default)
 
 **Hardware-aware model selection:**
 
 | Hardware | Models | Notes |
 |----------|--------|-------|
-| NVIDIA GPU ≥8GB VRAM | `qwen2.5:7b` + `qwen2.5-coder:7b` | GPU accelerated |
+| NVIDIA GPU ≥8GB VRAM | `qwen2.5:7b` | GPU accelerated |
 | NVIDIA GPU 4–7GB VRAM | `qwen2.5:7b` | GPU accelerated |
-| CPU, ≥14GB RAM | `qwen2.5:7b` + `qwen2.5-coder:7b` + `qwen2.5:1.5b` | CPU inference |
+| CPU, ≥14GB RAM | `qwen2.5:7b` + `qwen2.5:3b` + `qwen2.5:1.5b` | CPU inference |
 | CPU, 9–13GB RAM | `qwen2.5:7b` + `qwen2.5:1.5b` | CPU inference |
 | CPU, 7–8GB RAM | `qwen2.5:3b` | CPU inference |
 | CPU, <7GB RAM | `qwen2.5:1.5b` | CPU inference |
@@ -180,11 +179,46 @@ SlyClaw ships with first-class support for local inference via [Ollama](https://
 **Reference hardware (this installation):**
 - AMD Ryzen 7 6800U, 14GB RAM, AMD Radeon (integrated)
 - WSL2 environment — GPU compute not available, CPU inference only
-- Runs `qwen2.5:7b` at ~5–10 tokens/sec; `qwen2.5:1.5b` at ~30–40 tokens/sec
+- Default model: `qwen2.5:1.5b` (~30–40 tok/s); `qwen2.5:7b` available but ~5–10 tok/s on CPU
 
-**Ollama API:** available at `http://localhost:11434` inside the host and inside Docker containers (via host networking or bridge).
+**Ollama API:** `http://localhost:11434` — available on the host and inside Docker containers.
 
-**Model storage:** `~/.ollama/models/` — not inside the project directory.
+**Model storage:** `/root/.ollama/models/` inside the `slyclaw-ollama` Docker container.
+
+### LLM Routing — Qwen as Smart Front-End
+
+Qwen acts as a fast, always-on front-end. It handles simple requests locally and automatically delegates complex tasks to the Claude container agent. This routing is **per-group**, persisted in SQLite, and survives restarts.
+
+**Qwen tools:**
+
+| Tool | Description |
+|------|-------------|
+| `web_search` | DuckDuckGo HTML scraping — no API key required |
+| `fetch_url` | HTTP fetch with Puppeteer fallback for JS-rendered pages |
+| `delegate_to_claude` | Hand off to Claude when the task needs scheduling, files, bash, or MCP tools |
+
+**Routing decision (made by Qwen automatically):**
+
+| Request type | Path |
+|---|---|
+| Q&A, web lookups, URL summaries | Qwen handles directly |
+| Schedule a reminder / recurring task | Qwen calls `delegate_to_claude` → Claude |
+| Read/write files, run commands | Qwen calls `delegate_to_claude` → Claude |
+| Register groups, manage database | Qwen calls `delegate_to_claude` → Claude |
+| Ollama API error or timeout | Auto-fallback to Claude |
+
+**Switching LLMs (WhatsApp commands, per group):**
+
+| Command | Effect |
+|---------|--------|
+| `@Nano what llm` | Show current LLM for this group |
+| `@Nano list models` | Show all available models |
+| `@Nano use claude` | Switch to Claude container agent |
+| `@Nano use qwen` / `use ollama` | Switch to `qwen2.5:1.5b` (mini, default) |
+| `@Nano use qwen medium` | Switch to `qwen2.5:3b` |
+| `@Nano use qwen2.5:7b` | Switch to a specific model tag |
+
+**Default:** `DEFAULT_LLM=ollama:qwen2.5:1.5b` (set in `.env`). New groups start on Qwen mini automatically.
 
 ---
 
@@ -201,7 +235,8 @@ SlyClaw ships with first-class support for local inference via [Ollama](https://
 - `/customize` - General-purpose skill for adding capabilities (new channels like Telegram, new integrations, behavior changes)
 
 ### Deployment
-- Runs on local computer in the background ensuring if the host computer is rebooted, all required services are restarted in the background
+- Runs on WSL2 via systemd user service (`slyclaw.service`); restarts automatically on reboot
+- Ollama runs as a Docker container (`slyclaw-ollama`)
 - Single Node.js process handles everything
 
 ---

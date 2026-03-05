@@ -177,6 +177,14 @@ Configuration constants are in `src/config.ts`:
 import path from 'path';
 
 export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || 'Nano';
+export const ASSISTANT_HAS_OWN_NUMBER = ... // true if bot has its own WhatsApp number
+
+// Default LLM: "claude" | "ollama:<model>" (e.g. "ollama:qwen2.5:1.5b")
+export const DEFAULT_LLM = process.env.DEFAULT_LLM || 'claude';
+
+// Local Ollama API URL
+export const OLLAMA_LOCAL_URL = process.env.OLLAMA_LOCAL_URL || 'http://localhost:11434';
+
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
@@ -187,10 +195,10 @@ export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 
 // Container configuration
-export const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
-export const CONTAINER_TIMEOUT = parseInt(process.env.CONTAINER_TIMEOUT || '1800000', 10); // 30min default
+export const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'slyclaw-agent:latest';
+export const CONTAINER_TIMEOUT = parseInt(process.env.CONTAINER_TIMEOUT || '1800000', 10);
 export const IPC_POLL_INTERVAL = 1000;
-export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min — keep container alive after last result
+export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10);
 export const MAX_CONCURRENT_CONTAINERS = Math.max(1, parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5);
 
 export const TRIGGER_PATTERN = new RegExp(`^@${ASSISTANT_NAME}\\b`, 'i');
@@ -337,16 +345,22 @@ Sessions enable conversation continuity - Claude remembers what you talked about
    └── Build prompt with full conversation context
    │
    ▼
-7. Router invokes Claude Agent SDK:
+7. LLM routing (per group, stored in SQLite router_state):
+   ├── LLM command? ("what llm", "use qwen", etc.) → handle inline, no agent spawn
+   ├── Ollama selected → runOllamaRequest(model):
+   │     ├── Qwen handles with web_search / fetch_url
+   │     ├── Qwen calls delegate_to_claude → falls through to Claude
+   │     └── Ollama error/timeout → falls through to Claude
+   └── Claude selected → spawn container agent (step 8)
+   │
+   ▼
+8. Claude container agent processes message:
    ├── cwd: groups/{group-name}/
    ├── prompt: conversation history + current message
    ├── resume: session_id (for continuity)
-   └── mcpServers: nanoclaw (scheduler)
-   │
-   ▼
-8. Claude processes message:
+   ├── mcpServers: nanoclaw (scheduler)
    ├── Reads CLAUDE.md files for context
-   └── Uses tools as needed (search, email, etc.)
+   └── Uses all tools (Bash, files, WebSearch, schedule_task, etc.)
    │
    ▼
 9. Router prefixes response with assistant name and sends via WhatsApp
