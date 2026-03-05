@@ -165,21 +165,17 @@ SlyClaw ships with first-class support for local inference via [Ollama](https://
 - Strong multilingual support
 - Available through Ollama with efficient quantized formats (Q4_K_M default)
 
-**Hardware-aware model selection:**
+**Default model:** `qwen2.5:1.5b` — installed by `/setup` on all hardware. Fast on CPU (~30–40 tok/s), low memory (~1GB). Sufficient for Q&A, web search, and delegation to Claude.
 
-| Hardware | Models | Notes |
-|----------|--------|-------|
-| NVIDIA GPU ≥8GB VRAM | `qwen2.5:7b` | GPU accelerated |
-| NVIDIA GPU 4–7GB VRAM | `qwen2.5:7b` | GPU accelerated |
-| CPU, ≥14GB RAM | `qwen2.5:7b` + `qwen2.5:3b` + `qwen2.5:1.5b` | CPU inference |
-| CPU, 9–13GB RAM | `qwen2.5:7b` + `qwen2.5:1.5b` | CPU inference |
-| CPU, 7–8GB RAM | `qwen2.5:3b` | CPU inference |
-| CPU, <7GB RAM | `qwen2.5:1.5b` | CPU inference |
+Larger models can be pulled manually if needed:
+```bash
+docker exec slyclaw-ollama ollama pull qwen2.5:7b   # ~4.7GB, ~5-10 tok/s on CPU
+docker exec slyclaw-ollama ollama pull qwen2.5:3b   # ~1.9GB, ~15-20 tok/s on CPU
+```
 
 **Reference hardware (this installation):**
-- AMD Ryzen 7 6800U, 14GB RAM, AMD Radeon (integrated)
+- AMD Ryzen 7 6800U, ~27GB RAM, AMD Radeon 680M iGPU
 - WSL2 environment — GPU compute not available, CPU inference only
-- Default model: `qwen2.5:1.5b` (~30–40 tok/s); `qwen2.5:7b` available but ~5–10 tok/s on CPU
 
 **Ollama API:** `http://localhost:11434` — available on the host and inside Docker containers.
 

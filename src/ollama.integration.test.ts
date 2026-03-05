@@ -78,12 +78,12 @@ describe('Ollama container health', () => {
 // ---------------------------------------------------------------------------
 
 describe('Qwen model availability', () => {
-  const REQUIRED_MODELS = ['qwen2.5:7b', 'qwen2.5:3b', 'qwen2.5:1.5b'];
+  const REQUIRED_MODELS = ['qwen2.5:1.5b'];
 
-  it('at least 3 Qwen models are installed', () => {
+  it('at least one Qwen model is installed', () => {
     if (!ollamaReachable) return;
     const qwenModels = installedModels.filter((m) => m.toLowerCase().includes('qwen'));
-    expect(qwenModels.length).toBeGreaterThanOrEqual(3);
+    expect(qwenModels.length).toBeGreaterThanOrEqual(1);
     console.log(`  Qwen models: ${qwenModels.join(', ')}`);
   });
 

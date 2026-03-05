@@ -16,7 +16,7 @@ set -euo pipefail
 #
 # GPU priority: NVIDIA (--gpus all) > AMD ROCm (/dev/kfd+/dev/dri) > AMD DRI only > CPU
 # Memory:       --memory=18g  (at least 18GB allocated to container)
-# Models:       qwen2.5:7b + qwen2.5-coder:7b + qwen2.5:1.5b (+ optional overrides)
+# Models:       qwen2.5:1.5b (mini, default — fast on CPU; override with --models)
 # Claude API:   ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN passed from .env into container
 #
 # Usage:
@@ -66,11 +66,9 @@ VOLUME_NAME="slyclaw-ollama-models"
 CONTAINER_MEMORY="18g"
 OLLAMA_PORT="127.0.0.1:11434:11434"
 
-# Default models — 3 Qwen variants covering different memory/speed tradeoffs
-# qwen2.5:7b (~4.4GB)  — best quality
-# qwen2.5:3b (~2.0GB)  — balanced
-# qwen2.5:1.5b (~1.0GB) — fast, low memory
-DEFAULT_MODELS="qwen2.5:7b qwen2.5:3b qwen2.5:1.5b"
+# Default model — qwen2.5:1.5b (mini) is fast on CPU and sufficient for most tasks.
+# Larger models can be pulled later with: docker exec slyclaw-ollama ollama pull qwen2.5:7b
+DEFAULT_MODELS="qwen2.5:1.5b"
 
 # ---------------------------------------------------------------------------
 # 1. Check Docker
