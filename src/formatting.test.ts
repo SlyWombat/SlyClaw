@@ -118,8 +118,8 @@ describe('TRIGGER_PATTERN', () => {
   });
 
   it('matches case-insensitively', () => {
-    expect(TRIGGER_PATTERN.test('@andy hello')).toBe(true);
-    expect(TRIGGER_PATTERN.test('@ANDY hello')).toBe(true);
+    expect(TRIGGER_PATTERN.test('@nano hello')).toBe(true);
+    expect(TRIGGER_PATTERN.test('@NANO hello')).toBe(true);
   });
 
   it('does not match when not at start of message', () => {

@@ -184,6 +184,10 @@ describe('detectLlmCommand — returns null', () => {
     'tell me a joke',
     '',
     'use',
+    'use llm',
+    'use local',
+    'use nano',
+    'use model',
   ];
 
   for (const input of NULL_INPUTS) {

@@ -129,9 +129,9 @@ function parseLlmTarget(target: string): LlmChoice | null {
     return { type: 'ollama', model: target.slice(7) };
   }
 
-  // Raw model names (qwen2.5:7b, llama3.2, mistral, etc.)
-  // Allow word chars, dots, hyphens, and colons (for tags like :7b)
-  if (/^[a-z0-9][a-z0-9._-]*(?::[a-z0-9._-]+)?$/.test(t) && t !== 'claude') {
+  // Raw model names (qwen2.5:7b, llama3.2, etc.)
+  // Require a '.' or ':' so plain words like "llm", "local", "nano" don't match.
+  if (/^[a-z0-9][a-z0-9._-]*(?::[a-z0-9._-]+)?$/.test(t) && (t.includes('.') || t.includes(':'))) {
     return { type: 'ollama', model: t };
   }
 
