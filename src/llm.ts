@@ -15,7 +15,7 @@ import path from 'path';
 import { DEFAULT_LLM, GROUPS_DIR, OLLAMA_LOCAL_URL } from './config.js';
 import { getRouterState, setRouterState } from './db.js';
 import { logger } from './logger.js';
-import { OllamaApiMessage, callOllamaWithTools } from './ollama-tools.js';
+import { OllamaApiMessage, OllamaToolContext, callOllamaWithTools } from './ollama-tools.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -119,10 +119,11 @@ function parseLlmTarget(target: string): LlmChoice | null {
     return { type: 'claude' };
   }
 
-  // "ollama" or "qwen" alone → use the default Ollama model (full quality)
-  if (t === 'ollama' || t === 'qwen') return { type: 'ollama', model: 'qwen2.5:7b' };
-  // "qwen mini" / "qwen small" / "qwen fast" → lighter models
+  // "ollama" or "qwen" alone → default mid-size model
+  if (t === 'ollama' || t === 'qwen') return { type: 'ollama', model: 'qwen2.5:3b' };
+  // "qwen mini" / "qwen small" / "qwen fast" → lighter 1.5b model
   if (t === 'qwen mini' || t === 'qwen small' || t === 'qwen fast' || t === 'qwen light') return { type: 'ollama', model: 'qwen2.5:1.5b' };
+  // "qwen medium" / "qwen 3b" explicit aliases
   if (t === 'qwen medium' || t === 'qwen 3b') return { type: 'ollama', model: 'qwen2.5:3b' };
 
   if (t.startsWith('ollama:') || t.startsWith('ollama/')) {
@@ -262,6 +263,7 @@ export function readGroupSystemPrompt(groupFolder: string): string {
 export async function callOllama(
   model: string,
   groupFolder: string,
+  chatJid: string,
   userMessage: string,
   systemPrompt: string,
   timeoutMs = 120_000,
@@ -273,14 +275,27 @@ export async function callOllama(
   // and would otherwise confuse local models into thinking they are Claude.
   const ollamaPreamble =
     `You are Nano, a helpful AI assistant running locally via Ollama (model: ${model}).\n` +
-    `You have three tools available: web_search, fetch_url, and delegate_to_claude.\n` +
-    `Use delegate_to_claude whenever the user asks to: schedule tasks or reminders, ` +
-    `read or write files, run commands, manage groups, or do anything beyond web search.\n` +
-    `You do NOT have access to bash, files, containers, or other tools mentioned below — ` +
-    `use delegate_to_claude for those instead.\n` +
-    `Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n` +
+    `You have these tools available:\n` +
+    `  - web_search: search the web for current info\n` +
+    `  - fetch_url: read a web page\n` +
+    `  - get_current_time: get the current date and time\n` +
+    `  - list_scheduled_tasks: list all recurring tasks/reminders set up for this group\n` +
+    `  - create_scheduled_task: create a new scheduled task (requires prompt + cron expression)\n` +
+    `  - delete_scheduled_task: cancel a scheduled task by ID\n` +
+    `  - delegate_to_claude: hand off to the Claude agent for anything more complex\n` +
+    `\n` +
+    `IMPORTANT RULES:\n` +
+    `  - When asked about scheduled tasks or reminders, call list_scheduled_tasks.\n` +
+    `  - When asked about the current date or time, call get_current_time.\n` +
+    `  - When asked to search or fetch web content, call web_search or fetch_url.\n` +
+    `  - When asked to schedule or cancel tasks, use create_scheduled_task or delete_scheduled_task.\n` +
+    `  - If you cannot complete the request with your tools, use delegate_to_claude.\n` +
+    `  - You do NOT have access to bash, files, or containers — use delegate_to_claude for those.\n` +
+    `  - Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n` +
     `---\n`;
   const fullSystemPrompt = ollamaPreamble + systemPrompt;
+
+  const ctx: OllamaToolContext = { groupFolder, chatJid };
 
   // Cast history to OllamaApiMessage[] — safe because history only contains
   // role:'system'|'user'|'assistant' entries, which are valid OllamaApiMessage subtypes.
@@ -292,7 +307,7 @@ export async function callOllama(
 
   let reply: string;
   try {
-    reply = await callOllamaWithTools(model, messages, timeoutMs);
+    reply = await callOllamaWithTools(model, messages, timeoutMs, ctx);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     // Some models don't support tool calling — fall back to plain chat

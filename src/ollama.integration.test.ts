@@ -139,6 +139,7 @@ describe('callOllama inference', () => {
       const reply = await callOllama(
         'qwen2.5:1.5b',
         '__test__',
+        '__test__',
         'Reply with exactly the word: PONG',
         'You are a test assistant. Follow instructions precisely.',
       );
@@ -164,6 +165,7 @@ describe('callOllama inference', () => {
       const reply = await callOllama(
         'qwen2.5:3b',
         '__test__',
+        '__test__',
         'What is 2 + 2? Reply with only the number.',
         'You are a test assistant. Reply only with what is asked.',
       );
@@ -188,6 +190,7 @@ describe('callOllama inference', () => {
       const start = Date.now();
       const reply = await callOllama(
         'qwen2.5:7b',
+        '__test__',
         '__test__',
         'What is the capital of France? Reply with only the city name.',
         'You are a test assistant. Reply only with what is asked.',
@@ -227,6 +230,7 @@ describe('callOllamaWithTools', () => {
           { role: 'user', content: 'Say "hello" and nothing else.' },
         ],
         30_000,
+        { groupFolder: '__test__', chatJid: '__test__' },
       );
 
       expect(typeof reply).toBe('string');
@@ -284,12 +288,14 @@ describe('Ollama history isolation', () => {
       await callOllama(
         model,
         '__test_isolation_a__',
+        '__test__',
         'Remember the word: ALPHA',
         'You are a test assistant.',
       );
       const replyB = await callOllama(
         model,
         '__test_isolation_b__',
+        '__test__',
         'What word was I just asked to remember?',
         'You are a test assistant.',
       );

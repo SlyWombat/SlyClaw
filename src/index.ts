@@ -88,6 +88,12 @@ const SNAPPY_ACKS = [
 ];
 let snappyAckIndex = 0;
 
+// Matches responses where the local model incorrectly claims it cannot use
+// a capability it actually has (web search, current time/date awareness).
+// When detected, we auto-delegate to Claude instead of sending a useless reply.
+const CAPABILITY_DENIAL_RE =
+  /I (don't|do not|can't|cannot|am unable to|am not able to) (have )?(the ability to |access to |)?(browse|search the web|access (the internet|external|real.?time|current)|check the (current|present) (time|date)|provide (current|real.?time|up.?to.?date))/i;
+
 let whatsapp: WhatsAppChannel;
 const queue = new GroupQueue();
 
@@ -234,7 +240,15 @@ async function runOllamaRequest(
 
   try {
     logger.info({ group: group.name, model }, 'Running Ollama request');
-    const reply = await callOllama(model, group.folder, userText, systemPrompt);
+    const reply = await callOllama(model, group.folder, chatJid, userText, systemPrompt);
+
+    // If the model denies a capability it actually has (web search, current info),
+    // auto-delegate to Claude rather than sending a useless response.
+    if (reply && CAPABILITY_DENIAL_RE.test(reply)) {
+      logger.info({ group: group.name, model, reply }, 'Ollama denied capability — delegating to Claude');
+      throw new DelegateToClaudeError('model declined to use available tools');
+    }
+
     if (reply) {
       await whatsapp.sendMessage(chatJid, reply);
     } else {

@@ -101,6 +101,7 @@ async function askWithTools(
       { role: 'user', content: userMessage },
     ],
     timeoutMs,
+    { groupFolder: '__test__', chatJid: '__test__' },
   );
 }
 
@@ -122,6 +123,7 @@ describe('SlyClaw pipeline — basic prompt injection', () => {
       const reply = await callOllama(
         fastModel,
         '__prompt_test__',
+        '__test__',
         'What is the largest planet in the solar system? Reply in one sentence.',
         'You are a concise assistant. Answer in one sentence.',
       );
@@ -204,6 +206,7 @@ describe('SlyClaw pipeline — basic prompt injection', () => {
         const reply = await callOllama(
           fastModel,
           groupFolder,
+          '__test__',
           'What number did I mention earlier?',
           'You are a helpful assistant with memory.',
         );
@@ -439,6 +442,7 @@ describe('SlyClaw pipeline — message formatting', () => {
           { role: 'user', content: formattedMessage },
         ],
         FAST_TIMEOUT,
+        { groupFolder: '__test__', chatJid: '__test__' },
       );
 
       expect(reply.length).toBeGreaterThan(10);
@@ -476,6 +480,7 @@ describe('SlyClaw pipeline — message formatting', () => {
           { role: 'user', content: stripped },
         ],
         FAST_TIMEOUT,
+        { groupFolder: '__test__', chatJid: '__test__' },
       );
 
       expect(reply.trim()).toMatch(/56/);
@@ -502,6 +507,7 @@ describe('SlyClaw pipeline — edge cases', () => {
           { role: 'user', content: 'Hi' },
         ],
         FAST_TIMEOUT,
+        { groupFolder: '__test__', chatJid: '__test__' },
       );
 
       expect(typeof reply).toBe('string');
@@ -527,6 +533,7 @@ describe('SlyClaw pipeline — edge cases', () => {
           },
         ],
         FAST_TIMEOUT,
+        { groupFolder: '__test__', chatJid: '__test__' },
       );
 
       expect(reply.length).toBeGreaterThan(5);
@@ -549,6 +556,7 @@ describe('SlyClaw pipeline — edge cases', () => {
           { role: 'user', content: 'Recite the first 5 letters of the alphabet.' },
         ],
         FAST_TIMEOUT,
+        { groupFolder: '__test__', chatJid: '__test__' },
         5, // maxSteps
       );
       const elapsed = Date.now() - start;

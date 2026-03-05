@@ -9,7 +9,10 @@
  *
  *  Based on the NanoClaw project. Modified by Sly Wombat.
  */
-import { OLLAMA_LOCAL_URL } from './config.js';
+import { CronExpressionParser } from 'cron-parser';
+
+import { OLLAMA_LOCAL_URL, TIMEZONE } from './config.js';
+import { createTask, deleteTask, getTasksForGroup } from './db.js';
 import { logger } from './logger.js';
 
 // ---------------------------------------------------------------------------
@@ -96,9 +99,75 @@ const OLLAMA_TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'get_current_time',
+      description:
+        'Get the current date and time. Use this whenever the user asks about the current time, date, day of week, or when you need to know the current date to answer accurately. Never guess the date — always call this tool.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'list_scheduled_tasks',
+      description:
+        'List all scheduled tasks and reminders set up for this group. Use this whenever the user asks about scheduled services, reminders, recurring tasks, or what automation is set up. Never guess or say there are no tasks — always call this tool to check.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'create_scheduled_task',
+      description:
+        'Create a new scheduled task or reminder for this group. Use this when the user asks to set up a recurring task, reminder, or scheduled automation. Requires a cron expression for the schedule.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'The full instruction the agent will execute on each run (e.g. "Search the web for today\'s weather in Toronto and send a summary").',
+          },
+          cron_expression: {
+            type: 'string',
+            description: 'Standard cron expression for the schedule (e.g. "0 8 * * *" for 8am daily, "0 9 * * 1-5" for 9am weekdays). Use 5-field cron format.',
+          },
+        },
+        required: ['prompt', 'cron_expression'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'delete_scheduled_task',
+      description:
+        'Delete (cancel) a scheduled task by its ID. Use list_scheduled_tasks first to get the task ID, then call this to remove it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task_id: {
+            type: 'string',
+            description: 'The task ID to delete (from list_scheduled_tasks output).',
+          },
+        },
+        required: ['task_id'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'delegate_to_claude',
       description:
-        'Hand off this task to the Claude agent. Use this when the request requires: scheduling tasks or reminders, reading or writing files, running commands, managing groups, accessing the database, or any capability beyond web search and URL fetching.',
+        'Hand off this task to the Claude agent. Use this when the request requires: scheduling or cancelling tasks/reminders, reading or writing files, running commands, managing groups, accessing the database, or any capability beyond web search and URL fetching. Also use this if you are unsure or cannot answer accurately with your available tools.',
       parameters: {
         type: 'object',
         properties: {
@@ -280,10 +349,103 @@ function decodeHtmlEntities(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Lightweight tools (no external calls)
+// ---------------------------------------------------------------------------
+
+function getCurrentTime(): string {
+  const now = new Date();
+  return now.toLocaleString('en-CA', {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+function createScheduledTask(
+  prompt: string,
+  cronExpression: string,
+  groupFolder: string,
+  chatJid: string,
+): string {
+  try {
+    const interval = CronExpressionParser.parse(cronExpression, { tz: TIMEZONE });
+    const nextRun = interval.next().toISOString();
+    const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    createTask({
+      id,
+      group_folder: groupFolder,
+      chat_jid: chatJid,
+      prompt,
+      schedule_type: 'cron',
+      schedule_value: cronExpression,
+      context_mode: 'isolated',
+      next_run: nextRun,
+      status: 'active',
+      created_at: new Date().toISOString(),
+    });
+    const nextRunFormatted = nextRun ? new Date(nextRun).toLocaleString() : 'unknown';
+    return `Task created successfully.\nID: ${id}\nSchedule: ${cronExpression}\nFirst run: ${nextRunFormatted}`;
+  } catch (err) {
+    return `Failed to create task: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+function deleteScheduledTask(taskId: string, groupFolder: string): string {
+  try {
+    const tasks = getTasksForGroup(groupFolder);
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return `Task not found: ${taskId}. Use list_scheduled_tasks to see valid IDs.`;
+    deleteTask(taskId);
+    return `Task deleted: ${taskId}`;
+  } catch (err) {
+    return `Failed to delete task: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+function listScheduledTasks(groupFolder: string): string {
+  try {
+    const tasks = getTasksForGroup(groupFolder).filter((t) => t.status === 'active');
+    if (tasks.length === 0) return 'No active scheduled tasks for this group.';
+
+    return tasks
+      .map((t, i) => {
+        const schedule =
+          t.schedule_type === 'cron'
+            ? `cron: ${t.schedule_value}`
+            : `${t.schedule_type}: ${t.schedule_value}`;
+        const nextRun = t.next_run ? new Date(t.next_run as string).toLocaleString() : 'unknown';
+        const lastRun = t.last_run ? new Date(t.last_run as string).toLocaleString() : 'never';
+        // Truncate long prompts for readability
+        const summary =
+          t.prompt.length > 120 ? t.prompt.slice(0, 117) + '...' : t.prompt;
+        return `${i + 1}. *${summary}*\n   Schedule: ${schedule}\n   Next run: ${nextRun}\n   Last run: ${lastRun}`;
+      })
+      .join('\n\n');
+  } catch (err) {
+    logger.warn({ err, groupFolder }, 'listScheduledTasks failed');
+    return 'Could not retrieve scheduled tasks.';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tool executor
 // ---------------------------------------------------------------------------
 
-async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+export interface OllamaToolContext {
+  groupFolder: string;
+  chatJid: string;
+}
+
+async function executeTool(
+  name: string,
+  args: Record<string, unknown>,
+  ctx: OllamaToolContext,
+): Promise<string> {
   logger.info({ tool: name, args }, 'Executing Ollama tool');
   try {
     if (name === 'web_search') {
@@ -296,12 +458,31 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       if (!url) return 'Error: url parameter is required';
       return await fetchUrl(url);
     }
+    if (name === 'get_current_time') {
+      return getCurrentTime();
+    }
+    if (name === 'list_scheduled_tasks') {
+      return listScheduledTasks(ctx.groupFolder);
+    }
+    if (name === 'create_scheduled_task') {
+      const prompt = typeof args.prompt === 'string' ? args.prompt : String(args.prompt ?? '');
+      const cron = typeof args.cron_expression === 'string' ? args.cron_expression : String(args.cron_expression ?? '');
+      if (!prompt) return 'Error: prompt parameter is required';
+      if (!cron) return 'Error: cron_expression parameter is required';
+      return createScheduledTask(prompt, cron, ctx.groupFolder, ctx.chatJid);
+    }
+    if (name === 'delete_scheduled_task') {
+      const taskId = typeof args.task_id === 'string' ? args.task_id : String(args.task_id ?? '');
+      if (!taskId) return 'Error: task_id parameter is required';
+      return deleteScheduledTask(taskId, ctx.groupFolder);
+    }
     if (name === 'delegate_to_claude') {
       const reason = typeof args.reason === 'string' ? args.reason : 'complex task';
       throw new DelegateToClaudeError(reason);
     }
     return `Unknown tool: ${name}`;
   } catch (err) {
+    if (err instanceof DelegateToClaudeError) throw err;
     logger.error({ err, tool: name }, 'Tool execution error');
     return `Tool error: ${err instanceof Error ? err.message : String(err)}`;
   }
@@ -317,6 +498,7 @@ export async function callOllamaWithTools(
   model: string,
   messages: OllamaApiMessage[],
   timeoutMs: number,
+  ctx: OllamaToolContext,
   maxSteps = MAX_TOOL_STEPS,
 ): Promise<string> {
   const working: OllamaApiMessage[] = [...messages];
@@ -361,7 +543,7 @@ export async function callOllamaWithTools(
 
     // Execute each tool and append results
     for (const tc of toolCalls) {
-      const result = await executeTool(tc.function.name, tc.function.arguments);
+      const result = await executeTool(tc.function.name, tc.function.arguments, ctx);
       working.push({ role: 'tool', content: result });
     }
   }

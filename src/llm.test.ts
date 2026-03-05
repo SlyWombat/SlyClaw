@@ -101,17 +101,17 @@ describe('detectLlmCommand — switch to claude', () => {
 // ---------------------------------------------------------------------------
 
 describe('detectLlmCommand — switch to ollama models', () => {
-  it('switches to qwen2.5:7b on "use qwen"', () => {
+  it('switches to qwen2.5:3b on "use qwen"', () => {
     expect(detectLlmCommand('use qwen')).toEqual({
       action: 'switch',
-      choice: { type: 'ollama', model: 'qwen2.5:7b' },
+      choice: { type: 'ollama', model: 'qwen2.5:3b' },
     });
   });
 
-  it('switches to qwen2.5:7b on "use ollama"', () => {
+  it('switches to qwen2.5:3b on "use ollama"', () => {
     expect(detectLlmCommand('use ollama')).toEqual({
       action: 'switch',
-      choice: { type: 'ollama', model: 'qwen2.5:7b' },
+      choice: { type: 'ollama', model: 'qwen2.5:3b' },
     });
   });
 
@@ -165,10 +165,10 @@ describe('detectLlmCommand — switch to ollama models', () => {
   });
 
   it('fuzzy matches first token from natural phrase', () => {
-    // "use qwen for the best results" → first token is "qwen" → qwen2.5:7b
+    // "use qwen for the best results" → first token is "qwen" → qwen2.5:3b
     expect(detectLlmCommand('use qwen for the best results')).toEqual({
       action: 'switch',
-      choice: { type: 'ollama', model: 'qwen2.5:7b' },
+      choice: { type: 'ollama', model: 'qwen2.5:3b' },
     });
   });
 });
