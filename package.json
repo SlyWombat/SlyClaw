@@ -6,14 +6,15 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
+    "start": "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt node dist/index.js",
+    "dev": "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt tsx src/index.ts",
     "auth": "npm run build && node dist/whatsapp-auth.js",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

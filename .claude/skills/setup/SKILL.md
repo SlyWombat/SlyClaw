@@ -39,6 +39,110 @@ Run `./.claude/skills/setup/scripts/02-install-deps.sh` and parse the status blo
 
 Only ask the user for help if multiple retries fail with the same error.
 
+## 2.5. Start Ollama Docker Container and Pull Models
+
+Run `./.claude/skills/setup/scripts/10-setup-ollama.sh` and parse the status block.
+
+The script runs Ollama in a Docker container with:
+- **Memory**: `--memory=18g` (18GB allocated to container)
+- **GPU**: auto-detected (NVIDIA → `--gpus all`; AMD ROCm → `/dev/kfd`+`/dev/dri`; AMD WSL2 → `/dev/dri`; CPU fallback)
+- **Image**: `ollama/ollama:rocm` for AMD GPU, `ollama/ollama` for NVIDIA/CPU
+- **Models**: `qwen2.5:7b` + `qwen2.5:3b` + `qwen2.5:1.5b` (3 Qwen variants, covering quality → speed)
+- **Claude API**: `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` from `.env` are injected into the container environment
+- **Restart policy**: `unless-stopped` — container auto-restarts with Docker daemon
+
+**This hardware (AMD Ryzen 7 6800U, ~27GB RAM, WSL2):** The script will try `/dev/dri` passthrough with `ollama/ollama:rocm` for AMD iGPU acceleration. Falls back to CPU if the container fails to start.
+
+**If DOCKER_AVAILABLE=false:**
+- Docker not installed or daemon not running. Run the Docker setup skill or: `sudo systemctl start docker`
+- On WSL2: Docker Desktop (Windows) must be running, or `sudo service docker start` in WSL.
+
+**If OLLAMA_RUNNING=false:**
+- Container failed to start and API is not reachable.
+- Check container logs: `docker logs slyclaw-ollama`
+- Try force-recreating: `./.claude/skills/setup/scripts/10-setup-ollama.sh --restart`
+- If GPU caused the failure, the script auto-retries with CPU-only image.
+
+**If MODELS_FAILED is non-empty:**
+- A model pull failed (network issue or disk space). Retry with:
+  ```bash
+  ./.claude/skills/setup/scripts/10-setup-ollama.sh --models "qwen2.5:7b"
+  ```
+- Model files are stored in Docker volume `slyclaw-ollama-models`. Check disk: `df -h /`
+- The 7B Q4 model is ~4.4GB; all three models together are ~8GB.
+
+**To force-recreate the container** (e.g. after .env changes or to update GPU flags):
+```bash
+./.claude/skills/setup/scripts/10-setup-ollama.sh --restart
+```
+
+**To override models:**
+```bash
+./.claude/skills/setup/scripts/10-setup-ollama.sh --models "qwen2.5:7b qwen2.5:1.5b"
+```
+
+**To skip model pull (start container only):**
+```bash
+./.claude/skills/setup/scripts/10-setup-ollama.sh --skip-pull
+```
+
+**Verify with test script:**
+```bash
+./scripts/test-ollama.sh
+```
+
+## 2.6. Claude API in Container (Verification)
+
+Run `./.claude/skills/setup/scripts/10-setup-ollama.sh --check-cloud` and parse the status block.
+
+Check `ANTHROPIC_API_KEY_CONFIGURED` and `CLAUDE_OAUTH_CONFIGURED` to confirm credentials are present in `.env`.
+
+- **If both are false:** The Ollama container runs without Claude credentials. This is fine for local Qwen inference only. Skip to step 2.7.
+- **If credentials exist in `.env` but not in container** (`ANTHROPIC_API_KEY_IN_CONTAINER=false`): Recreate the container to inject them:
+  ```bash
+  ./.claude/skills/setup/scripts/10-setup-ollama.sh --restart
+  ```
+
+The Claude API key in the container allows any tool or script running inside the Ollama container to call the Anthropic API directly if needed.
+
+Run `./scripts/test-ollama.sh` to confirm the key is present in the container.
+
+## 2.7. Select Default LLM
+
+Now that both Claude and Ollama are available, choose which should be the default for all new conversations.
+
+Run `./.claude/skills/setup/scripts/10-setup-ollama.sh --check-cloud` to confirm Ollama is available. If `OLLAMA_RUNNING` is not reported (from step 2.5), skip to the end of this step and default to Claude.
+
+AskUserQuestion: Which LLM should be the default for new conversations?
+
+- **Claude (Anthropic)** — Full agent with tools, web search, file access, scheduled tasks. Requires API key / subscription. Recommended if you use advanced features.
+- **Ollama / qwen2.5:7b** — Local model in Docker container (GPU-accelerated if AMD iGPU available). Good for offline or cost-free responses.
+- **Ollama / qwen2.5:1.5b** — Local model, fastest response times, lighter quality. Best for quick low-latency replies.
+- **Ollama / qwen2.5:3b** — Local model, ~2GB, balanced quality and speed.
+- **Ollama / qwen2.5:1.5b** — Local model, ~1GB, fastest response times, lighter quality.
+
+Write the choice to `.env`:
+
+```bash
+# Claude (default)
+echo "DEFAULT_LLM=claude" >> .env
+
+# OR Ollama
+echo "DEFAULT_LLM=ollama:qwen2.5:7b" >> .env
+```
+
+**If the key already exists in `.env`:** use `sed -i` to replace the existing line rather than appending.
+
+Verify the file contains the line:
+```bash
+grep "^DEFAULT_LLM=" .env
+```
+
+After setup, the user can switch per-chat at any time via WhatsApp:
+- `@Nano what llm are you using` — current model
+- `@Nano list models` — all available
+- `@Nano use claude` / `@Nano use qwen2.5:7b` — switch (persists)
+
 ## 3. Container Runtime
 
 Use the environment check results from step 1 to decide which runtime to use:
@@ -103,7 +207,7 @@ First, determine the phone number situation. Get the bot's WhatsApp number from 
 
 AskUserQuestion: Does the bot share your personal WhatsApp number, or does it have its own dedicated phone number?
 
-AskUserQuestion: What trigger word? (default: Andy). In group chats, messages starting with @TriggerWord go to Claude. In the main channel, no prefix needed.
+AskUserQuestion: What trigger word? (default: Nano). In group chats, messages starting with @TriggerWord go to Claude. In the main channel, no prefix needed.
 
 AskUserQuestion: Main channel type? (options depend on phone number setup)
 
@@ -138,7 +242,7 @@ Run `./.claude/skills/setup/scripts/06-register-channel.sh` with args:
 - `--trigger "@TriggerWord"` — from step 6
 - `--folder "main"` — always "main" for the first channel
 - `--no-trigger-required` — if personal chat, DM, or solo group
-- `--assistant-name "Name"` — if trigger word differs from "Andy"
+- `--assistant-name "Name"` — if trigger word differs from "Nano"
 
 ## 9. Mount Allowlist
 
@@ -169,6 +273,10 @@ Run `./.claude/skills/setup/scripts/08-setup-service.sh` and parse the status bl
 
 Run `./.claude/skills/setup/scripts/09-verify.sh` and parse the status block.
 
+The script runs automatically:
+- **Unit tests** (`npm test`) — pure logic, no external dependencies. Always run.
+- **Integration tests** (`npm run test:integration`) — live Ollama API required. Skipped if container not running.
+
 **If STATUS=failed, fix each failing component:**
 - SERVICE=stopped → run `npm run build` first, then restart: `launchctl kickstart -k gui/$(id -u)/com.nanoclaw` (macOS) or `systemctl --user restart nanoclaw` (Linux). Re-check.
 - SERVICE=not_found → re-run step 10.
@@ -176,6 +284,11 @@ Run `./.claude/skills/setup/scripts/09-verify.sh` and parse the status block.
 - WHATSAPP_AUTH=not_found → re-run step 5.
 - REGISTERED_GROUPS=0 → re-run steps 7-8.
 - MOUNT_ALLOWLIST=missing → run `./.claude/skills/setup/scripts/07-configure-mounts.sh --empty` to create a default.
+- OLLAMA_CONTAINER=not_found → re-run step 2.5.
+- OLLAMA_API=unreachable → `docker start slyclaw-ollama`, wait 10s, re-run verify.
+- OLLAMA_QWEN_MODELS=0 → run `./.claude/skills/setup/scripts/10-setup-ollama.sh --skip-pull` to start container, then re-pull models.
+- UNIT_TESTS=failed → read `logs/setup.log` for the test failure details. Fix the broken test or the underlying code.
+- INTEGRATION_TESTS=failed → run `npm run test:integration` manually to see verbose output. Common causes: model not installed (check `docker exec slyclaw-ollama ollama list`), container not running, inference timeout.
 
 After fixing, re-run `09-verify.sh` to confirm everything passes.
 
@@ -184,6 +297,18 @@ Tell user to test: send a message in their registered chat (with or without trig
 Show the log tail command: `tail -f logs/nanoclaw.log`
 
 ## Troubleshooting
+
+**Ollama container not starting after reboot:** Docker's `--restart unless-stopped` policy auto-restarts the container when Docker daemon starts. On WSL2, Docker daemon starts with Windows. Check: `docker inspect slyclaw-ollama --format='{{.State.Status}}'`. If stopped: `docker start slyclaw-ollama`.
+
+**Ollama container GPU not working:** Check container devices: `docker inspect slyclaw-ollama --format='{{.HostConfig.Devices}}'`. If `/dev/dri` is missing, the host WSL2 environment may not expose it. Fall back to CPU: `docker stop slyclaw-ollama && docker rm slyclaw-ollama` then re-run setup with `--models "qwen2.5:1.5b"` for faster CPU inference.
+
+**Claude API key not in container:** If `.env` was updated after the container was created, the container won't pick up the new key. Force-recreate: `./.claude/skills/setup/scripts/10-setup-ollama.sh --restart`
+
+**Ollama model pull fails:** Check disk space (`df -h /`) — models live in Docker volume `slyclaw-ollama-models`. The 7B Q4 model is ~4.4GB; all 3 models are ~8GB total. If a pull is interrupted, re-run: `docker exec slyclaw-ollama ollama pull qwen2.5:7b`
+
+**Slow inference on CPU:** Expected when GPU isn't working. On AMD Ryzen 7 6800U without GPU acceleration, 7B models run at ~5–10 tok/s. Use `qwen2.5:1.5b` for faster responses. Check `./scripts/test-ollama.sh` for measured latency.
+
+**View Ollama container logs:** `docker logs slyclaw-ollama --tail 50 -f`
 
 **Service not starting:** Check `logs/nanoclaw.error.log`. Common causes: wrong Node path in plist (re-run step 10), missing `.env` (re-run step 4), missing WhatsApp auth (re-run step 5).
 

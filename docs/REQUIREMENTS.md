@@ -72,6 +72,7 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - **Scheduled tasks** that run Claude and can message back
 - **Web access** for search and browsing
 - **Browser automation** via agent-browser
+- **Ollama + Qwen** for local LLM inference (offline/low-latency tasks)
 
 **Implementation approach:**
 - Use existing tools (WhatsApp connector, Claude Agent SDK, MCP servers)
@@ -85,7 +86,7 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 ### Message Routing
 - A router listens to WhatsApp and routes messages based on configuration
 - Only messages from registered groups are processed
-- Trigger: `@Andy` prefix (case insensitive), configurable via `ASSISTANT_NAME` env var
+- Trigger: `@Nano` prefix (case insensitive), configurable via `ASSISTANT_NAME` env var
 - Unregistered groups are ignored completely
 
 ### Memory System
@@ -154,6 +155,36 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - Snapshot-based interaction with element references (@e1, @e2, etc.)
 - Screenshots, PDFs, video recording
 - Authentication state persistence
+
+### Local LLM — Ollama + Qwen2.5
+
+SlyClaw ships with first-class support for local inference via [Ollama](https://ollama.com). The `/setup` skill automatically installs Ollama and pulls Qwen2.5 models sized for the host hardware.
+
+**Why Qwen2.5?**
+- Best-in-class open-weight model at every size tier (0.5B–72B)
+- Strong multilingual support
+- Dedicated `qwen2.5-coder` variant for programming tasks
+- Available through Ollama with efficient quantized formats (Q4_K_M default)
+
+**Hardware-aware model selection:**
+
+| Hardware | Models | Notes |
+|----------|--------|-------|
+| NVIDIA GPU ≥8GB VRAM | `qwen2.5:7b` + `qwen2.5-coder:7b` | GPU accelerated |
+| NVIDIA GPU 4–7GB VRAM | `qwen2.5:7b` | GPU accelerated |
+| CPU, ≥14GB RAM | `qwen2.5:7b` + `qwen2.5-coder:7b` + `qwen2.5:1.5b` | CPU inference |
+| CPU, 9–13GB RAM | `qwen2.5:7b` + `qwen2.5:1.5b` | CPU inference |
+| CPU, 7–8GB RAM | `qwen2.5:3b` | CPU inference |
+| CPU, <7GB RAM | `qwen2.5:1.5b` | CPU inference |
+
+**Reference hardware (this installation):**
+- AMD Ryzen 7 6800U, 14GB RAM, AMD Radeon (integrated)
+- WSL2 environment — GPU compute not available, CPU inference only
+- Runs `qwen2.5:7b` at ~5–10 tokens/sec; `qwen2.5:1.5b` at ~30–40 tokens/sec
+
+**Ollama API:** available at `http://localhost:11434` inside the host and inside Docker containers (via host networking or bridge).
+
+**Model storage:** `~/.ollama/models/` — not inside the project directory.
 
 ---
 

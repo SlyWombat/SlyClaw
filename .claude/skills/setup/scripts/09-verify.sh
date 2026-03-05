@@ -94,9 +94,58 @@ if [ -f "$HOME/.config/slyclaw/mount-allowlist.json" ]; then
 fi
 log "Mount allowlist: $MOUNT_ALLOWLIST"
 
+# 7. Check Ollama Docker container
+OLLAMA_CONTAINER="not_found"
+OLLAMA_API="unreachable"
+OLLAMA_MODELS=0
+
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' slyclaw-ollama 2>/dev/null || echo "not_found")
+  if [ "$CONTAINER_STATUS" = "running" ]; then
+    OLLAMA_CONTAINER="running"
+    # Check API reachability
+    if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+      OLLAMA_API="reachable"
+      # Count installed Qwen models
+      OLLAMA_MODELS=$(curl -sf http://localhost:11434/api/tags 2>/dev/null | \
+        grep -o '"name":"[^"]*"' | grep -ci "qwen" || echo "0")
+    fi
+  elif [ "$CONTAINER_STATUS" != "not_found" ]; then
+    OLLAMA_CONTAINER="$CONTAINER_STATUS"
+  fi
+fi
+log "Ollama container: $OLLAMA_CONTAINER, API: $OLLAMA_API, Qwen models: $OLLAMA_MODELS"
+
+# 8. Run unit tests (fast, no external deps)
+UNIT_TESTS="not_run"
+if command -v npm >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/package.json" ]; then
+  if npm test --prefix "$PROJECT_ROOT" >> "$LOG_FILE" 2>&1; then
+    UNIT_TESTS="passed"
+    log "Unit tests passed"
+  else
+    UNIT_TESTS="failed"
+    log "Unit tests failed — see logs/setup.log"
+  fi
+fi
+
+# 9. Run integration tests if Ollama is reachable
+INTEGRATION_TESTS="skipped"
+if [ "$OLLAMA_API" = "reachable" ] && command -v npm >/dev/null 2>&1; then
+  if npm run test:integration --prefix "$PROJECT_ROOT" >> "$LOG_FILE" 2>&1; then
+    INTEGRATION_TESTS="passed"
+    log "Integration tests passed"
+  else
+    INTEGRATION_TESTS="failed"
+    log "Integration tests failed — see logs/setup.log"
+  fi
+fi
+
 # Determine overall status
 STATUS="success"
 if [ "$SERVICE" != "running" ] || [ "$CREDENTIALS" = "missing" ] || [ "$WHATSAPP_AUTH" = "not_found" ] || [ "$REGISTERED_GROUPS" -eq 0 ] 2>/dev/null; then
+  STATUS="failed"
+fi
+if [ "$UNIT_TESTS" = "failed" ] || [ "$INTEGRATION_TESTS" = "failed" ]; then
   STATUS="failed"
 fi
 
@@ -110,6 +159,11 @@ CREDENTIALS: $CREDENTIALS
 WHATSAPP_AUTH: $WHATSAPP_AUTH
 REGISTERED_GROUPS: $REGISTERED_GROUPS
 MOUNT_ALLOWLIST: $MOUNT_ALLOWLIST
+OLLAMA_CONTAINER: $OLLAMA_CONTAINER
+OLLAMA_API: $OLLAMA_API
+OLLAMA_QWEN_MODELS: $OLLAMA_MODELS
+UNIT_TESTS: $UNIT_TESTS
+INTEGRATION_TESTS: $INTEGRATION_TESTS
 STATUS: $STATUS
 LOG: logs/setup.log
 === END ===

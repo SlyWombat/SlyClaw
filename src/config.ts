@@ -16,12 +16,21 @@ import { readEnvFile } from './env.js';
 // Read config values from .env (falls back to process.env).
 // Secrets are NOT read here — they stay on disk and are loaded only
 // where needed (container-runner.ts) to avoid leaking to child processes.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER']);
+const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL']);
 
 export const ASSISTANT_NAME =
-  process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
+  process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Nano';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER || envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
+
+// Default LLM: "claude" | "ollama:<model>" (e.g. "ollama:qwen2.5:7b")
+export const DEFAULT_LLM =
+  process.env.DEFAULT_LLM || envConfig.DEFAULT_LLM || 'claude';
+
+// Local Ollama API URL (always localhost — not the cloud OLLAMA_HOST)
+export const OLLAMA_LOCAL_URL =
+  process.env.OLLAMA_LOCAL_URL || envConfig.OLLAMA_LOCAL_URL || 'http://localhost:11434';
+
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 

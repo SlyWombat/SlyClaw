@@ -21,6 +21,18 @@ import {
   POLL_INTERVAL,
   TRIGGER_PATTERN,
 } from './config.js';
+import {
+  LlmChoice,
+  callOllama,
+  clearOllamaHistory,
+  detectLlmCommand,
+  formatLlmName,
+  getAvailableLlms,
+  getGroupLlm,
+  readGroupSystemPrompt,
+  serializeLlm,
+  setGroupLlm,
+} from './llm.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
@@ -141,6 +153,105 @@ export function _setRegisteredGroups(groups: Record<string, RegisteredGroup>): v
 }
 
 /**
+ * Handle LLM management commands ("what llm", "switch to ollama", "list models", etc.)
+ * Returns true if the message was an LLM command and was handled, false otherwise.
+ */
+async function tryHandleLlmCommand(
+  group: RegisteredGroup,
+  isMainGroup: boolean,
+  messages: NewMessage[],
+  chatJid: string,
+): Promise<boolean> {
+  // Find the last triggered message to extract the command text
+  const lastTriggered = [...messages].reverse().find((m) =>
+    isMainGroup || group.requiresTrigger === false
+      ? true
+      : TRIGGER_PATTERN.test(m.content.trim()),
+  );
+  if (!lastTriggered) return false;
+
+  const rawText = lastTriggered.content.replace(TRIGGER_PATTERN, '').trim();
+  const cmd = detectLlmCommand(rawText);
+  if (!cmd) return false;
+
+  const current = getGroupLlm(group.folder);
+  let response: string;
+
+  if (cmd.action === 'status') {
+    response =
+      `Currently using: *${formatLlmName(current)}*\n` +
+      (current.type === 'ollama'
+        ? '_(local model — web search + URL fetching via tools)_'
+        : '_(full agent with tools, web search, and file access)_');
+  } else if (cmd.action === 'list') {
+    const available = await getAvailableLlms();
+    const lines = available.map((a) => {
+      const isCurrent = a.id === serializeLlm(current);
+      return `${isCurrent ? '✓' : '•'} ${a.label}`;
+    });
+    response =
+      `Available LLMs:\n${lines.join('\n')}\n\n` +
+      `To switch: "@${ASSISTANT_NAME} use claude" or "@${ASSISTANT_NAME} use qwen2.5:7b"`;
+  } else {
+    // switch
+    const { choice } = cmd;
+    setGroupLlm(group.folder, choice);
+    clearOllamaHistory(group.folder);
+    response =
+      `✓ Switched to *${formatLlmName(choice)}*\n` +
+      (choice.type === 'ollama'
+        ? '_(local model — web search + URL fetching via tools)_'
+        : '_(full agent mode with tools restored)_');
+  }
+
+  await whatsapp.sendMessage(chatJid, response);
+  return true;
+}
+
+/**
+ * Run a request through Ollama (local HTTP API).
+ * Falls back to Claude if Ollama fails.
+ */
+async function runOllamaRequest(
+  group: RegisteredGroup,
+  messages: NewMessage[],
+  chatJid: string,
+  model: string,
+): Promise<'success' | 'error' | 'fallback'> {
+  // Build a plain-text user message from the pending messages (strip trigger prefix)
+  const userText = messages
+    .map((m) => {
+      const content = m.content.replace(TRIGGER_PATTERN, '').trim();
+      return messages.length > 1 ? `${m.sender_name}: ${content}` : content;
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  if (!userText) return 'success'; // nothing to say
+
+  const systemPrompt = readGroupSystemPrompt(group.folder);
+
+  try {
+    logger.info({ group: group.name, model }, 'Running Ollama request');
+    const reply = await callOllama(model, group.folder, userText, systemPrompt);
+    if (reply) {
+      await whatsapp.sendMessage(chatJid, reply);
+    } else {
+      await whatsapp.sendMessage(chatJid, '_(no response from model)_');
+    }
+    return 'success';
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.error({ group: group.name, model, err }, 'Ollama request failed');
+    await whatsapp.sendMessage(
+      chatJid,
+      `⚠️ *${model}* failed: ${errMsg}\nFalling back to Claude...`,
+    );
+    return 'fallback';
+  }
+}
+
+/**
  * Process all pending messages for a group.
  * Called by the GroupQueue when it's this group's turn.
  */
@@ -163,21 +274,57 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
+  // --- LLM management commands (status / list / switch) ---
+  // Handled before the cursor advances so no cursor side-effects.
+  const wasLlmCommand = await tryHandleLlmCommand(
+    group,
+    isMainGroup,
+    missedMessages,
+    chatJid,
+  );
+  if (wasLlmCommand) {
+    // Advance cursor so the command is not re-processed on next poll
+    lastAgentTimestamp[chatJid] = missedMessages[missedMessages.length - 1].timestamp;
+    saveState();
+    return true;
+  }
+
+  // --- Route to selected LLM ---
+  const currentLlm: LlmChoice = getGroupLlm(group.folder);
   const prompt = formatMessages(missedMessages);
 
-  // Advance cursor so the piping path in startMessageLoop won't re-fetch
-  // these messages. Save the old cursor so we can roll back on error.
+  // Advance cursor (save old for rollback on error)
   const previousCursor = lastAgentTimestamp[chatJid] || '';
-  lastAgentTimestamp[chatJid] =
-    missedMessages[missedMessages.length - 1].timestamp;
+  lastAgentTimestamp[chatJid] = missedMessages[missedMessages.length - 1].timestamp;
   saveState();
 
   logger.info(
-    { group: group.name, messageCount: missedMessages.length },
+    { group: group.name, messageCount: missedMessages.length, llm: formatLlmName(currentLlm) },
     'Processing messages',
   );
 
-  // Track idle timer for closing stdin when agent is idle
+  await whatsapp.setTyping(chatJid, true);
+  await whatsapp.sendMessage(chatJid, SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
+  snappyAckIndex++;
+
+  // --- Ollama path ---
+  if (currentLlm.type === 'ollama') {
+    const result = await runOllamaRequest(group, missedMessages, chatJid, currentLlm.model);
+    await whatsapp.setTyping(chatJid, false);
+
+    if (result === 'fallback') {
+      // Ollama failed — fall through to Claude below (don't return)
+    } else {
+      if (result === 'error') {
+        lastAgentTimestamp[chatJid] = previousCursor;
+        saveState();
+        return false;
+      }
+      return true;
+    }
+  }
+
+  // --- Claude path (original) ---
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   const resetIdleTimer = () => {
@@ -188,31 +335,21 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }, IDLE_TIMEOUT);
   };
 
-  await whatsapp.setTyping(chatJid, true);
-  await whatsapp.sendMessage(chatJid, SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
-  snappyAckIndex++;
   let hadError = false;
   let outputSentToUser = false;
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Streaming output callback — called for each agent result
     if (result.result) {
       const raw = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
         await whatsapp.sendMessage(chatJid, text);
         outputSentToUser = true;
       }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
-
-      // Kill container immediately after receiving output — IPC piping is disabled,
-      // so we spawn a new container per message. Killing here unblocks runAgent.
       queue.killContainer(chatJid);
     }
-
     if (result.status === 'error') {
       hadError = true;
     }
@@ -220,18 +357,13 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   await whatsapp.setTyping(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
-
-  // Also kill on error path in case no output was produced
   queue.killContainer(chatJid);
 
   if (output === 'error' || hadError) {
-    // If we already sent output to the user, don't roll back the cursor —
-    // the user got their response and re-processing would send duplicates.
     if (outputSentToUser) {
       logger.warn({ group: group.name }, 'Agent error after output was sent, skipping cursor rollback to prevent duplicates');
       return true;
     }
-    // Roll back cursor so retries can re-process these messages
     lastAgentTimestamp[chatJid] = previousCursor;
     saveState();
     logger.warn({ group: group.name }, 'Agent error, rolled back message cursor for retry');
