@@ -71,12 +71,18 @@ function createFakeClient() {
 let fakeClient: ReturnType<typeof createFakeClient>;
 
 // Mock whatsapp-web.js
+// whatsapp.ts uses `import wwebjs from 'whatsapp-web.js'` (default import) then
+// destructures Client and LocalAuth from it — so the mock must include a `default`
+// export that mirrors the real module shape (CJS module.exports = { Client, ... }).
 vi.mock('whatsapp-web.js', () => {
+  // Must use regular functions (not arrows) so they can be called with `new`
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const Client = vi.fn(function (_opts: unknown) { return fakeClient; });
+  const LocalAuth = vi.fn(function () {});
   return {
-    // Must use a regular function (not arrow) so it can be called with `new`
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    Client: vi.fn(function (_opts: unknown) { return fakeClient; }),
-    LocalAuth: vi.fn(function () {}),
+    default: { Client, LocalAuth },
+    Client,
+    LocalAuth,
   };
 });
 
