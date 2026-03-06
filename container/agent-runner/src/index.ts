@@ -442,7 +442,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__slyclaw__*'
+        'mcp__slyclaw__*',
+        'mcp__ollama__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -456,6 +457,14 @@ async function runQuery(
             SLYCLAW_CHAT_JID: containerInput.chatJid,
             SLYCLAW_GROUP_FOLDER: containerInput.groupFolder,
             SLYCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+          },
+        },
+        ollama: {
+          command: 'node',
+          args: [path.join(path.dirname(mcpServerPath), 'ollama-mcp-stdio.js')],
+          env: {
+            OLLAMA_HOST: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434',
+            OLLAMA_DEFAULT_MODEL: process.env.OLLAMA_DEFAULT_MODEL || 'llama3.2',
           },
         },
       },

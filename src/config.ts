@@ -31,6 +31,11 @@ export const DEFAULT_LLM =
 export const OLLAMA_LOCAL_URL =
   process.env.OLLAMA_LOCAL_URL || envConfig.OLLAMA_LOCAL_URL || 'http://localhost:11434';
 
+// Default model used by the Ollama MCP server inside the Claude container agent.
+// Separate from DEFAULT_LLM (which controls the Qwen routing layer).
+export const OLLAMA_DEFAULT_MODEL =
+  process.env.OLLAMA_DEFAULT_MODEL || 'llama3.2';
+
 export const POLL_INTERVAL = 500;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
