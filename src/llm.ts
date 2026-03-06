@@ -181,7 +181,7 @@ export async function getAvailableLlms(): Promise<Array<{ label: string; id: str
 // Ollama conversation history (persisted to groups/{folder}/ollama_history.json)
 // ---------------------------------------------------------------------------
 
-const MAX_HISTORY = 20; // messages (user + assistant pairs = 10 turns)
+const MAX_HISTORY = 10; // messages (user + assistant pairs = 5 turns)
 
 function historyPath(groupFolder: string): string {
   return path.join(GROUPS_DIR, groupFolder, 'ollama_history.json');
@@ -282,15 +282,20 @@ export async function callOllama(
     `  - list_scheduled_tasks: list all recurring tasks/reminders set up for this group\n` +
     `  - create_scheduled_task: create a new scheduled task (requires prompt + cron expression)\n` +
     `  - delete_scheduled_task: cancel a scheduled task by ID\n` +
-    `  - delegate_to_claude: hand off to the Claude agent for anything more complex\n` +
+    `  - delegate_to_claude: hand off to the Claude agent, which has full capabilities\n` +
+    `\n` +
+    `The Claude agent (via delegate_to_claude) can do everything you cannot:\n` +
+    `  email (read inbox, send, search), calendar, files, bash commands, database queries,\n` +
+    `  browser automation, group management, and any other skill or integration.\n` +
     `\n` +
     `IMPORTANT RULES:\n` +
     `  - When asked about scheduled tasks or reminders, call list_scheduled_tasks.\n` +
     `  - When asked about the current date or time, call get_current_time.\n` +
     `  - When asked to search or fetch web content, call web_search or fetch_url.\n` +
     `  - When asked to schedule or cancel tasks, use create_scheduled_task or delete_scheduled_task.\n` +
-    `  - If you cannot complete the request with your tools, use delegate_to_claude.\n` +
-    `  - You do NOT have access to bash, files, or containers — use delegate_to_claude for those.\n` +
+    `  - When asked about email, inbox, calendar, files, or anything requiring system access, call delegate_to_claude.\n` +
+    `  - If you are unsure whether you can do something, call delegate_to_claude rather than guessing.\n` +
+    `  - NEVER say you cannot do something — use delegate_to_claude instead.\n` +
     `  - Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n` +
     `---\n`;
   const fullSystemPrompt = ollamaPreamble + systemPrompt;

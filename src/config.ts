@@ -31,7 +31,7 @@ export const DEFAULT_LLM =
 export const OLLAMA_LOCAL_URL =
   process.env.OLLAMA_LOCAL_URL || envConfig.OLLAMA_LOCAL_URL || 'http://localhost:11434';
 
-export const POLL_INTERVAL = 2000;
+export const POLL_INTERVAL = 500;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts

@@ -250,7 +250,7 @@ async function webSearch(query: string): Promise<string> {
 // URL fetching with HTML stripping
 // ---------------------------------------------------------------------------
 
-const FETCH_MAX_CHARS = 5000;
+const FETCH_MAX_CHARS = 2500;
 
 async function fetchUrl(url: string): Promise<string> {
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -512,6 +512,7 @@ export async function callOllamaWithTools(
         messages: working,
         tools: OLLAMA_TOOLS,
         stream: false,
+        keep_alive: -1,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
