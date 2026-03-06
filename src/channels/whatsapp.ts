@@ -13,8 +13,8 @@ import fs from 'fs';
 import path from 'path';
 
 import wwebjs from 'whatsapp-web.js';
-import type { Client as ClientType, Message, GroupChat, Chat } from 'whatsapp-web.js';
-const { Client, LocalAuth } = wwebjs;
+import type { Client as ClientType, Message, GroupChat, Chat, MessageMedia } from 'whatsapp-web.js';
+const { Client, LocalAuth, MessageTypes } = wwebjs;
 
 import { ASSISTANT_HAS_OWN_NUMBER, ASSISTANT_NAME, STORE_DIR } from '../config.js';
 import {
@@ -170,6 +170,19 @@ export class WhatsAppChannel implements Channel {
       ? fromMe
       : content.startsWith(`${ASSISTANT_NAME}:`);
 
+    // Download image attachments and pass base64 data to the message handler
+    let imageAttachment: { base64: string; mimeType: string } | undefined;
+    if (msg.hasMedia && (msg.type === MessageTypes.IMAGE || msg.type === MessageTypes.STICKER)) {
+      try {
+        const media = await msg.downloadMedia() as MessageMedia;
+        if (media?.data) {
+          imageAttachment = { base64: media.data, mimeType: media.mimetype };
+        }
+      } catch (err) {
+        logger.warn({ err, chatJid }, 'Failed to download image attachment');
+      }
+    }
+
     this.opts.onMessage(chatJid, {
       id: msg.id._serialized,
       chat_jid: chatJid,
@@ -179,6 +192,7 @@ export class WhatsAppChannel implements Channel {
       timestamp,
       is_from_me: fromMe,
       is_bot_message: isBotMessage,
+      imageAttachment,
     });
   }
 

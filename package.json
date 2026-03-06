@@ -19,10 +19,12 @@
   "dependencies": {
     "better-sqlite3": "^11.8.1",
     "cron-parser": "^5.5.0",
+    "discord.js": "^14.25.1",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "puppeteer": "^23.0.0",
     "qrcode": "^1.5.4",
+    "sharp": "^0.34.5",
     "whatsapp-web.js": "^1.26.0",
     "zod": "^4.3.6"
   },

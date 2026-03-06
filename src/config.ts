@@ -16,12 +16,15 @@ import { readEnvFile } from './env.js';
 // Read config values from .env (falls back to process.env).
 // Secrets are NOT read here — they stay on disk and are loaded only
 // where needed (container-runner.ts) to avoid leaking to child processes.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL']);
+const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL', 'DISCORD_BOT_TOKEN']);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Nano';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER || envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
+
+export const DISCORD_BOT_TOKEN =
+  process.env.DISCORD_BOT_TOKEN || envConfig.DISCORD_BOT_TOKEN || '';
 
 // Default LLM: "claude" | "ollama:<model>" (e.g. "ollama:qwen2.5:7b")
 export const DEFAULT_LLM =

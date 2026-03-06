@@ -16,6 +16,8 @@ import path from 'path';
 import {
   ASSISTANT_NAME,
   DATA_DIR,
+  DISCORD_BOT_TOKEN,
+  GROUPS_DIR,
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
@@ -34,6 +36,7 @@ import {
   setGroupLlm,
 } from './llm.js';
 import { DelegateToClaudeError } from './ollama-tools.js';
+import { DiscordChannel } from './channels/discord.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
@@ -60,7 +63,7 @@ import { GroupQueue } from './group-queue.js';
 import { startIpcWatcher } from './ipc.js';
 import { formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { NewMessage, RegisteredGroup } from './types.js';
+import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
 // Re-export for backwards compatibility during refactor
@@ -95,7 +98,21 @@ const CAPABILITY_DENIAL_RE =
   /I (don't|do not|can't|cannot|am unable to|am not able to) (have )?(the ability to |access to |)?(browse|search the web|access (the internet|external|real.?time|current)|check the (current|present) (time|date)|provide (current|real.?time|up.?to.?date))/i;
 
 let whatsapp: WhatsAppChannel;
+const channels: Channel[] = [];
 const queue = new GroupQueue();
+
+function getChannelForJid(jid: string): Channel | undefined {
+  return channels.find((c) => c.ownsJid(jid));
+}
+
+async function sendToChannel(jid: string, text: string): Promise<void> {
+  const ch = getChannelForJid(jid);
+  if (ch) {
+    await ch.sendMessage(jid, text);
+  } else {
+    logger.warn({ jid }, 'No channel found for JID, dropping message');
+  }
+}
 
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
@@ -211,7 +228,7 @@ async function tryHandleLlmCommand(
         : '_(full agent mode with tools restored)_');
   }
 
-  await whatsapp.sendMessage(chatJid, response);
+  await sendToChannel(chatJid,response);
   return true;
 }
 
@@ -250,23 +267,20 @@ async function runOllamaRequest(
     }
 
     if (reply) {
-      await whatsapp.sendMessage(chatJid, reply);
+      await sendToChannel(chatJid,reply);
     } else {
-      await whatsapp.sendMessage(chatJid, '_(no response from model)_');
+      await sendToChannel(chatJid,'_(no response from model)_');
     }
     return 'success';
   } catch (err: unknown) {
     if (err instanceof DelegateToClaudeError) {
       logger.info({ group: group.name, model, reason: err.message }, 'Ollama delegating to Claude');
-      await whatsapp.sendMessage(chatJid, `_(handing off to Claude: ${err.message})_`);
+      await sendToChannel(chatJid,`_(handing off to Claude: ${err.message})_`);
       return 'fallback';
     }
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error({ group: group.name, model, err }, 'Ollama request failed');
-    await whatsapp.sendMessage(
-      chatJid,
-      `⚠️ *${model}* failed: ${errMsg}\nFalling back to Claude...`,
-    );
+    await sendToChannel(chatJid, `⚠️ *${model}* failed: ${errMsg}\nFalling back to Claude...`);
     return 'fallback';
   }
 }
@@ -323,14 +337,14 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     'Processing messages',
   );
 
-  await whatsapp.setTyping(chatJid, true);
-  await whatsapp.sendMessage(chatJid, SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
+  await getChannelForJid(chatJid)?.setTyping?.(chatJid, true);
+  await sendToChannel(chatJid,SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
   snappyAckIndex++;
 
   // --- Ollama path ---
   if (currentLlm.type === 'ollama') {
     const result = await runOllamaRequest(group, missedMessages, chatJid, currentLlm.model);
-    await whatsapp.setTyping(chatJid, false);
+    await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
 
     if (result === 'fallback') {
       // Ollama failed — fall through to Claude below (don't return)
@@ -364,7 +378,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
-        await whatsapp.sendMessage(chatJid, text);
+        await sendToChannel(chatJid,text);
         outputSentToUser = true;
       }
       resetIdleTimer();
@@ -375,7 +389,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   });
 
-  await whatsapp.setTyping(chatJid, false);
+  await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
   queue.killContainer(chatJid);
 
@@ -541,7 +555,7 @@ async function startMessageLoop(): Promise<void> {
               messagesToSend[messagesToSend.length - 1].timestamp;
             saveState();
             // Show typing indicator while the container processes the piped message
-            whatsapp.setTyping(chatJid, true);
+            getChannelForJid(chatJid)?.setTyping?.(chatJid, true);
           } else {
             // No active container — enqueue for a new one
             queue.enqueueMessageCheck(chatJid);
@@ -614,20 +628,64 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
     await queue.shutdown(10000);
-    await whatsapp.disconnect();
+    for (const ch of channels) await ch.disconnect();
     process.exit(0);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
+  // Shared inbound message handler — saves image attachments to disk before storing
+  const handleInbound = (chatJid: string, msg: NewMessage): void => {
+    if (msg.imageAttachment) {
+      const group = registeredGroups[chatJid];
+      if (group) {
+        try {
+          const imgDir = path.join(GROUPS_DIR, group.folder, 'images');
+          fs.mkdirSync(imgDir, { recursive: true });
+          const ext = msg.imageAttachment.mimeType.includes('png') ? 'png' : 'jpg';
+          const filename = `${new Date(msg.timestamp).toISOString().replace(/[:.]/g, '-')}.${ext}`;
+          const hostPath = path.join(imgDir, filename);
+          fs.writeFileSync(hostPath, Buffer.from(msg.imageAttachment.base64, 'base64'));
+          const containerPath = `/workspace/group/images/${filename}`;
+          msg = {
+            ...msg,
+            content: msg.content
+              ? `${msg.content} [Image: ${containerPath}]`
+              : `[Image: ${containerPath}]`,
+            imageAttachment: undefined,
+          };
+          logger.info({ chatJid, path: containerPath }, 'Image attachment saved');
+        } catch (err) {
+          logger.warn({ err, chatJid }, 'Failed to save image attachment');
+          msg = { ...msg, content: `${msg.content} [Image - save failed]`, imageAttachment: undefined };
+        }
+      }
+    }
+    storeMessage(msg);
+  };
+
   // Create WhatsApp channel
   whatsapp = new WhatsAppChannel({
-    onMessage: (chatJid, msg) => storeMessage(msg),
+    onMessage: handleInbound,
     onChatMetadata: (chatJid, timestamp) => storeChatMetadata(chatJid, timestamp),
     registeredGroups: () => registeredGroups,
   });
+  channels.push(whatsapp);
 
-  // Connect — resolves when first connected
+  // Create Discord channel if token is configured
+  if (DISCORD_BOT_TOKEN) {
+    const discord = new DiscordChannel({
+      token: DISCORD_BOT_TOKEN,
+      onMessage: handleInbound,
+      onChatMetadata: (chatJid, timestamp, name) => storeChatMetadata(chatJid, timestamp, name),
+      registeredGroups: () => registeredGroups,
+    });
+    channels.push(discord);
+    discord.connect().catch((err) => logger.error({ err }, 'Discord connection failed'));
+    logger.info('Discord channel enabled');
+  }
+
+  // Connect WhatsApp — resolves when first connected
   await whatsapp.connect();
 
   // Start subsystems (independently of connection handler)
@@ -638,11 +696,11 @@ async function main(): Promise<void> {
     onProcess: (groupJid, proc, containerName, groupFolder) => queue.registerProcess(groupJid, proc, containerName, groupFolder),
     sendMessage: async (jid, rawText) => {
       const text = formatOutbound(rawText);
-      if (text) await whatsapp.sendMessage(jid, text);
+      if (text) await sendToChannel(jid, text);
     },
   });
   startIpcWatcher({
-    sendMessage: (jid, text) => whatsapp.sendMessage(jid, text),
+    sendMessage: (jid, text) => sendToChannel(jid, text),
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroupMetadata: (force) => whatsapp.syncGroupMetadata(force),

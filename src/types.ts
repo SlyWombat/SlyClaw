@@ -61,6 +61,8 @@ export interface NewMessage {
   timestamp: string;
   is_from_me?: boolean;
   is_bot_message?: boolean;
+  // Optional image attachment — channel sets this; index.ts saves to disk and rewrites content
+  imageAttachment?: { base64: string; mimeType: string };
 }
 
 export interface ScheduledTask {
