@@ -279,6 +279,97 @@ describe('validateMount', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Security: symlink and path traversal attacks
+// ---------------------------------------------------------------------------
+
+describe('validateMount — security: symlink traversal', () => {
+  it('blocks symlink inside allowed root that points outside', async () => {
+    // Agent creates a symlink: allowed-root/link -> tmpDir/outside
+    // realpathSync resolves it to outside/, which is not under allowed-root/
+    const outsideDir = path.join(tmpDir, 'outside-sensitive');
+    fs.mkdirSync(outsideDir);
+    const symlinkPath = path.join(allowedRootPath, 'escape-link');
+    fs.symlinkSync(outsideDir, symlinkPath);
+
+    writeAllowlist(validAllowlist());
+    const { validateMount } = await loadModule();
+    const result = validateMount({ hostPath: symlinkPath }, true);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('not under any allowed root');
+  });
+
+  it('resolves symlink that points within the allowed root (safe)', async () => {
+    // Symlink to another directory still inside allowed root → allowed
+    const realTarget = path.join(allowedRootPath, 'real-project');
+    fs.mkdirSync(realTarget);
+    const symlinkPath = path.join(allowedRootPath, 'link-to-project');
+    fs.symlinkSync(realTarget, symlinkPath);
+
+    writeAllowlist(validAllowlist());
+    const { validateMount } = await loadModule();
+    const result = validateMount({ hostPath: symlinkPath }, true);
+    expect(result.allowed).toBe(true);
+  });
+});
+
+describe('validateMount — security: path traversal in hostPath', () => {
+  it('blocks path traversal via relative segments (allowed-root/../outside)', async () => {
+    const outsideDir = path.join(tmpDir, 'outside-sensitive');
+    fs.mkdirSync(outsideDir);
+    // Attempt traversal: start inside allowed-root but use .. to escape
+    const traversalPath = path.join(allowedRootPath, '..', 'outside-sensitive');
+
+    writeAllowlist(validAllowlist());
+    const { validateMount } = await loadModule();
+    const result = validateMount({ hostPath: traversalPath }, true);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('not under any allowed root');
+  });
+
+  it('blocks traversal to a blocked-pattern path via relative segments', async () => {
+    // Create .ssh inside tmpDir (outside allowed root)
+    const sshDir = path.join(tmpDir, '.ssh');
+    fs.mkdirSync(sshDir);
+    // Traversal attempt into it from inside allowed root
+    const traversalPath = path.join(allowedRootPath, '..', '.ssh');
+
+    writeAllowlist(validAllowlist());
+    const { validateMount } = await loadModule();
+    const result = validateMount({ hostPath: traversalPath }, true);
+    expect(result.allowed).toBe(false);
+  });
+});
+
+describe('validateMount — security: tilde expansion', () => {
+  it('blocks ~/.ssh via tilde expansion hitting default blocked pattern', async () => {
+    // HOME is set in test environment; ~/.ssh resolves to a blocked pattern
+    // Even if the dir doesn't exist, getRealPath returns null → blocked as "does not exist"
+    // If it does exist, it hits the .ssh blocked pattern
+    // Either way, mounting ~/.ssh must be blocked.
+    writeAllowlist(validAllowlist());
+    const { validateMount } = await loadModule();
+    const result = validateMount({ hostPath: '~/.ssh' }, true);
+    // Blocked either because path doesn't exist or because it matches .ssh pattern
+    expect(result.allowed).toBe(false);
+  });
+
+  it('blocks ~/.aws via tilde expansion', async () => {
+    writeAllowlist(validAllowlist());
+    const { validateMount } = await loadModule();
+    const result = validateMount({ hostPath: '~/.aws' }, true);
+    expect(result.allowed).toBe(false);
+  });
+
+  it('blocks home directory itself (not under any allowed root)', async () => {
+    writeAllowlist(validAllowlist()); // allowed root is tmpDir/allowed-root, not HOME
+    const { validateMount } = await loadModule();
+    const result = validateMount({ hostPath: '~' }, true);
+    // Either home dir is outside allowed root, or matches a blocked pattern
+    expect(result.allowed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // validateAdditionalMounts
 // ---------------------------------------------------------------------------
 

@@ -603,3 +603,63 @@ describe('register_group success', () => {
     expect(getRegisteredGroup('partial@g.us')).toBeUndefined();
   });
 });
+
+// --- Unknown / malformed IPC payloads ---
+
+describe('unknown and malformed IPC payloads', () => {
+  it('does not crash on unknown IPC type', async () => {
+    await expect(
+      processTaskIpc({ type: 'totally_unknown_action' }, 'main', true, deps),
+    ).resolves.toBeUndefined();
+  });
+
+  it('does not create task when schedule_task is missing prompt', async () => {
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        // missing prompt
+        schedule_type: 'once',
+        schedule_value: '2027-01-01T00:00:00.000Z',
+        targetJid: 'other@g.us',
+      },
+      'main',
+      true,
+      deps,
+    );
+    expect(getAllTasks()).toHaveLength(0);
+  });
+
+  it('does not create task when schedule_task is missing targetJid', async () => {
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: 'Do something',
+        schedule_type: 'once',
+        schedule_value: '2027-01-01T00:00:00.000Z',
+        // missing targetJid
+      },
+      'main',
+      true,
+      deps,
+    );
+    expect(getAllTasks()).toHaveLength(0);
+  });
+
+  it('does nothing for pause_task with no taskId', async () => {
+    await expect(
+      processTaskIpc({ type: 'pause_task' }, 'main', true, deps),
+    ).resolves.toBeUndefined();
+  });
+
+  it('does nothing for cancel_task with no taskId', async () => {
+    await expect(
+      processTaskIpc({ type: 'cancel_task' }, 'main', true, deps),
+    ).resolves.toBeUndefined();
+  });
+
+  it('does nothing for resume_task with no taskId', async () => {
+    await expect(
+      processTaskIpc({ type: 'resume_task' }, 'main', true, deps),
+    ).resolves.toBeUndefined();
+  });
+});
