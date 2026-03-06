@@ -16,7 +16,6 @@ import path from 'path';
 import {
   ASSISTANT_NAME,
   DATA_DIR,
-  DISCORD_BOT_TOKEN,
   GROUPS_DIR,
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
@@ -36,7 +35,6 @@ import {
   setGroupLlm,
 } from './llm.js';
 import { DelegateToClaudeError } from './ollama-tools.js';
-import { DiscordChannel } from './channels/discord.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
@@ -671,19 +669,6 @@ async function main(): Promise<void> {
     registeredGroups: () => registeredGroups,
   });
   channels.push(whatsapp);
-
-  // Create Discord channel if token is configured
-  if (DISCORD_BOT_TOKEN) {
-    const discord = new DiscordChannel({
-      token: DISCORD_BOT_TOKEN,
-      onMessage: handleInbound,
-      onChatMetadata: (chatJid, timestamp, name) => storeChatMetadata(chatJid, timestamp, name),
-      registeredGroups: () => registeredGroups,
-    });
-    channels.push(discord);
-    discord.connect().catch((err) => logger.error({ err }, 'Discord connection failed'));
-    logger.info('Discord channel enabled');
-  }
 
   // Connect WhatsApp — resolves when first connected
   await whatsapp.connect();
