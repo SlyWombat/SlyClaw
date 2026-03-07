@@ -17,8 +17,11 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "ask-sdk-core": "^2.14.0",
+    "ask-sdk-express-adapter": "^2.14.0",
     "better-sqlite3": "^11.8.1",
     "cron-parser": "^5.5.0",
+    "express": "^5.2.1",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "puppeteer": "^23.0.0",
@@ -29,6 +32,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.0",
     "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^4.0.18",

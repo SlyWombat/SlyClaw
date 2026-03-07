@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  ALEXA_PORT,
   ASSISTANT_NAME,
   DATA_DIR,
   GROUPS_DIR,
@@ -35,6 +36,7 @@ import {
   setGroupLlm,
 } from './llm.js';
 import { DelegateToClaudeError } from './ollama-tools.js';
+import { AlexaChannel, ALEXA_JID } from './channels/alexa.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
@@ -172,6 +174,20 @@ export function getAvailableGroups(): import('./container-runner.js').AvailableG
 /** @internal - exported for testing */
 export function _setRegisteredGroups(groups: Record<string, RegisteredGroup>): void {
   registeredGroups = groups;
+}
+
+function ensureAlexaRegistered(): void {
+  if (!ALEXA_PORT) return;
+  if (!registeredGroups[ALEXA_JID]) {
+    registerGroup(ALEXA_JID, {
+      name: 'Alexa',
+      folder: 'alexa',
+      trigger: '',
+      added_at: new Date().toISOString(),
+      requiresTrigger: false,
+    });
+    logger.info('Alexa chat auto-registered');
+  }
 }
 
 /**
@@ -621,6 +637,7 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
   loadState();
+  ensureAlexaRegistered();
 
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
@@ -672,6 +689,16 @@ async function main(): Promise<void> {
 
   // Connect WhatsApp — resolves when first connected
   await whatsapp.connect();
+
+  // Connect Alexa channel if port is configured
+  if (ALEXA_PORT) {
+    const alexa = new AlexaChannel({
+      onMessage: handleInbound,
+      onChatMetadata: (chatJid, timestamp, name) => storeChatMetadata(chatJid, timestamp, name),
+    });
+    channels.push(alexa);
+    await alexa.connect();
+  }
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({

@@ -16,7 +16,7 @@ import { readEnvFile } from './env.js';
 // Read config values from .env (falls back to process.env).
 // Secrets are NOT read here — they stay on disk and are loaded only
 // where needed (container-runner.ts) to avoid leaking to child processes.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL']);
+const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL', 'ALEXA_PORT', 'ALEXA_SKILL_ID']);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Nano';
@@ -88,3 +88,7 @@ export const TRIGGER_PATTERN = new RegExp(
 // Uses system timezone by default
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Alexa channel — disabled when ALEXA_PORT is 0 or unset
+export const ALEXA_PORT = parseInt(process.env.ALEXA_PORT || envConfig.ALEXA_PORT || '0', 10);
+export const ALEXA_SKILL_ID = process.env.ALEXA_SKILL_ID || envConfig.ALEXA_SKILL_ID || '';
