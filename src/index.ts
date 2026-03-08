@@ -352,8 +352,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   );
 
   await getChannelForJid(chatJid)?.setTyping?.(chatJid, true);
-  await sendToChannel(chatJid,SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
-  snappyAckIndex++;
+  // Skip sarcastic acks for voice channels — they consume the pending HTTP response slot
+  if (!chatJid.startsWith('alexa:')) {
+    await sendToChannel(chatJid, SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
+    snappyAckIndex++;
+  }
 
   // --- Ollama path ---
   if (currentLlm.type === 'ollama') {

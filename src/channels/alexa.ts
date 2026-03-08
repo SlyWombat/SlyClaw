@@ -9,16 +9,12 @@ import { Channel, OnChatMetadata, OnInboundMessage } from '../types.js';
 
 export const ALEXA_JID = 'alexa:default';
 
-// Maximum characters Alexa speaks comfortably in one response
+// Alexa has a hard 8-second HTTP timeout on skill responses.
+// We respond immediately with "working on it" and cache the result.
+// The user then says "what did you find" to hear the answer.
 const MAX_SPEECH_CHARS = 3000;
-
-// How long to wait for the agent to respond before sending a timeout reply
-const RESPONSE_TIMEOUT_MS = 25000;
-
-interface PendingRequest {
-  resolve: (text: string) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
+// Wait up to 6s for a fast response (Ollama without tools); otherwise fire-and-forget.
+const FAST_RESPONSE_TIMEOUT_MS = 7000;
 
 export interface AlexaChannelOpts {
   onMessage: OnInboundMessage;
@@ -30,10 +26,11 @@ export class AlexaChannel implements Channel {
 
   private opts: AlexaChannelOpts;
   private server: Server | null = null;
-  // Map from Alexa requestId → pending resolve for outbound response
-  private pending = new Map<string, PendingRequest>();
-  // Most recent pending requestId
-  private latestRequestId: string | null = null;
+  // Pending fast-response: resolve when agent replies within 6s
+  private pendingResolve: ((text: string) => void) | null = null;
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  // Cached result from the last completed query (for "what did you find")
+  private lastResult: string | null = null;
 
   constructor(opts: AlexaChannelOpts) {
     this.opts = opts;
@@ -45,12 +42,11 @@ export class AlexaChannel implements Channel {
     const LaunchHandler: Alexa.RequestHandler = {
       canHandle: (input) =>
         Alexa.getRequestType(input.requestEnvelope) === 'LaunchRequest',
-      handle: (input) => {
-        return input.responseBuilder
+      handle: (input) =>
+        input.responseBuilder
           .speak(`${ASSISTANT_NAME} is ready. What would you like to ask?`)
           .reprompt('What would you like to ask?')
-          .getResponse();
-      },
+          .getResponse(),
     };
 
     const QueryIntentHandler: Alexa.RequestHandler = {
@@ -72,29 +68,9 @@ export class AlexaChannel implements Channel {
 
         const requestId = input.requestEnvelope.request.requestId;
         const timestamp = new Date().toISOString();
-
         logger.info({ query, requestId }, 'Alexa query received');
 
-        // Send progressive response so Alexa doesn't time out while agent thinks
-        try {
-          const directiveServiceClient =
-            input.serviceClientFactory?.getDirectiveServiceClient();
-          if (directiveServiceClient) {
-            await directiveServiceClient.enqueue({
-              header: {
-                requestId: requestId,
-              },
-              directive: {
-                type: 'VoicePlayer.Speak',
-                speech: '<speak>Let me think about that.</speak>',
-              },
-            });
-          }
-        } catch {
-          // Progressive response is best-effort; continue regardless
-        }
-
-        // Deliver inbound message — the message loop will process it
+        // Deliver inbound message to the agent
         this.opts.onChatMetadata(ALEXA_JID, timestamp, 'Alexa');
         this.opts.onMessage(ALEXA_JID, {
           id: requestId,
@@ -106,29 +82,74 @@ export class AlexaChannel implements Channel {
           is_from_me: false,
         });
 
-        // Wait for sendMessage() to be called with the agent's response
-        const responseText = await new Promise<string>((resolve) => {
-          this.latestRequestId = requestId;
-          const timer = setTimeout(() => {
-            this.pending.delete(requestId);
-            resolve(
-              "I'm still working on that. Check back in a moment or look at your phone for the result.",
-            );
-          }, RESPONSE_TIMEOUT_MS);
-          this.pending.set(requestId, { resolve, timer });
+        // Try to get a fast response within 6 seconds.
+        // If the agent finishes in time, speak it directly.
+        // If not, tell the user to ask "what did you find" and cache the result when it arrives.
+        const responseText = await new Promise<string | null>((resolve) => {
+          this.pendingResolve = resolve;
+          this.pendingTimer = setTimeout(() => {
+            this.pendingResolve = null;
+            this.pendingTimer = null;
+            resolve(null); // timed out — will fire-and-forget
+          }, FAST_RESPONSE_TIMEOUT_MS);
         });
 
-        const speech =
-          responseText.length > MAX_SPEECH_CHARS
-            ? responseText.slice(0, MAX_SPEECH_CHARS) +
-              '... The full response was sent to your phone.'
-            : responseText;
+        if (responseText !== null) {
+          // Fast response — speak it and close the session
+          const speech =
+            responseText.length > MAX_SPEECH_CHARS
+              ? responseText.slice(0, MAX_SPEECH_CHARS) + '... The full response is on your phone.'
+              : responseText;
+          return input.responseBuilder
+            .speak(speech)
+            .withShouldEndSession(true)
+            .getResponse();
+        } else {
+          // Slow response — agent is still running, cache result when ready
+          return input.responseBuilder
+            .speak(
+              "I'm working on that. Ask me 'what did you find' in a moment when I'm done.",
+            )
+            .withShouldEndSession(true)
+            .getResponse();
+        }
+      },
+    };
 
+    const LastResultIntentHandler: Alexa.RequestHandler = {
+      canHandle: (input) =>
+        Alexa.getRequestType(input.requestEnvelope) === 'IntentRequest' &&
+        Alexa.getIntentName(input.requestEnvelope) === 'LastResultIntent',
+      handle: (input) => {
+        if (!this.lastResult) {
+          return input.responseBuilder
+            .speak("I don't have a result yet. I might still be working on it.")
+            .reprompt('Is there anything else?')
+            .getResponse();
+        }
+        const speech =
+          this.lastResult.length > MAX_SPEECH_CHARS
+            ? this.lastResult.slice(0, MAX_SPEECH_CHARS) + '... The full response is on your phone.'
+            : this.lastResult;
+        this.lastResult = null; // clear after reading
         return input.responseBuilder
           .speak(speech)
-          .reprompt('Is there anything else?')
+          .withShouldEndSession(true)
           .getResponse();
       },
+    };
+
+    const FallbackIntentHandler: Alexa.RequestHandler = {
+      canHandle: (input) =>
+        Alexa.getRequestType(input.requestEnvelope) === 'IntentRequest' &&
+        Alexa.getIntentName(input.requestEnvelope) === 'AMAZON.FallbackIntent',
+      handle: (input) =>
+        input.responseBuilder
+          .speak(
+            "I didn't catch that. Try saying: ask me, tell me, what is, how do I, or where is — followed by your question.",
+          )
+          .reprompt('What would you like to ask?')
+          .getResponse(),
     };
 
     const StopIntentHandler: Alexa.RequestHandler = {
@@ -151,7 +172,10 @@ export class AlexaChannel implements Channel {
       handle: (input, error) => {
         logger.error({ error: error.message }, 'Alexa error handler');
         return input.responseBuilder
-          .speak('Sorry, something went wrong. Please try again.')
+          .speak(
+            "I didn't catch that. Try saying: ask me, tell me, what is, how do I, or where is — followed by your question.",
+          )
+          .reprompt('What would you like to ask?')
           .getResponse();
       },
     };
@@ -160,6 +184,8 @@ export class AlexaChannel implements Channel {
       .addRequestHandlers(
         LaunchHandler,
         QueryIntentHandler,
+        LastResultIntentHandler,
+        FallbackIntentHandler,
         StopIntentHandler,
         SessionEndedHandler,
       )
@@ -186,20 +212,18 @@ export class AlexaChannel implements Channel {
   }
 
   async sendMessage(_jid: string, text: string): Promise<void> {
-    if (this.latestRequestId) {
-      const pending = this.pending.get(this.latestRequestId);
-      if (pending) {
-        clearTimeout(pending.timer);
-        this.pending.delete(this.latestRequestId);
-        this.latestRequestId = null;
-        pending.resolve(text);
-        return;
-      }
+    if (this.pendingResolve) {
+      // Fast path: agent replied within 6s, resolve the waiting HTTP request
+      clearTimeout(this.pendingTimer!);
+      const resolve = this.pendingResolve;
+      this.pendingResolve = null;
+      this.pendingTimer = null;
+      resolve(text);
+    } else {
+      // Slow path: HTTP request already returned "working on it", cache for next ask
+      this.lastResult = text;
+      logger.info({ textLength: text.length }, 'Alexa: result cached for next LastResultIntent');
     }
-    logger.debug(
-      { textLength: text.length },
-      'Alexa: agent response arrived but no pending request',
-    );
   }
 
   isConnected(): boolean {
@@ -211,12 +235,11 @@ export class AlexaChannel implements Channel {
   }
 
   async disconnect(): Promise<void> {
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.resolve('SlyClaw is shutting down. Please try again shortly.');
+    if (this.pendingResolve) {
+      clearTimeout(this.pendingTimer!);
+      this.pendingResolve('SlyClaw is shutting down. Please try again shortly.');
+      this.pendingResolve = null;
     }
-    this.pending.clear();
-
     if (this.server) {
       await new Promise<void>((resolve) => this.server!.close(() => resolve()));
       this.server = null;
