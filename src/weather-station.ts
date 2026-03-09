@@ -55,6 +55,11 @@ interface EcowittRealTimeData {
     count?: EcowittValue;
     time?: EcowittValue;
   };
+  pm25_ch1?: {
+    pm25?: EcowittValue;
+    real_time_aqi?: EcowittValue;
+    '24_hours_aqi'?: EcowittValue;
+  };
 }
 
 interface EcowittApiResponse {
@@ -209,6 +214,17 @@ export function formatWeatherSummary(data: EcowittRealTimeData, stationName: str
     const solar = fmt(s.solar);
     if (uvi !== 'N/A' || solar !== 'N/A') {
       lines.push(`UV: ${uvi} | Solar: ${solar}`);
+    }
+  }
+
+  // PM2.5 air quality
+  if (data.pm25_ch1) {
+    const pm = data.pm25_ch1;
+    const reading = fmt(pm.pm25);
+    const aqi = fmt(pm.real_time_aqi);
+    if (reading !== 'N/A') {
+      const aqiNum = pm.real_time_aqi?.value ?? '';
+      lines.push(`Air quality: PM2.5 ${reading} | AQI ${aqiNum}`);
     }
   }
 
