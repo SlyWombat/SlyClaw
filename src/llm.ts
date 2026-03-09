@@ -124,13 +124,13 @@ function parseLlmTarget(target: string): LlmChoice | null {
   }
 
   // Gemini aliases
-  if (t === 'gemini' || t === 'google') return { type: 'gemini', model: 'gemini-2.0-flash-lite' };
-  if (t === 'gemini flash' || t === 'gemini fast') return { type: 'gemini', model: 'gemini-2.0-flash' };
-  if (t === 'gemini pro' || t === 'gemini smart') return { type: 'gemini', model: 'gemini-1.5-pro' };
+  if (t === 'gemini' || t === 'google') return { type: 'gemini', model: 'gemini-flash-lite-latest' };
+  if (t === 'gemini flash' || t === 'gemini fast' || t === 'gemini lite') return { type: 'gemini', model: 'gemini-flash-lite-latest' };
+  if (t === 'gemini pro' || t === 'gemini smart') return { type: 'gemini', model: 'gemini-pro-latest' };
   if (t.startsWith('gemini:') || t.startsWith('gemini/')) {
     return { type: 'gemini', model: target.slice(7) };
   }
-  // Direct gemini model names (gemini-2.0-flash-lite, gemini-1.5-pro, etc.)
+  // Direct gemini model names (gemini-2.5-flash, gemini-2.5-pro, etc.)
   if (/^gemini-/.test(t)) return { type: 'gemini', model: t };
 
   // "ollama" or "qwen" alone → default mid-size model
