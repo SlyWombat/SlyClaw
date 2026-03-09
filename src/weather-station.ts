@@ -70,7 +70,7 @@ interface EcowittApiResponse {
 
 let cachedData: EcowittRealTimeData | null = null;
 let cacheTimestamp = 0;
-const CACHE_TTL_MS = 60_000; // 1 minute
+const CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 export function injectLocalData(data: EcowittRealTimeData): void {
@@ -233,7 +233,7 @@ export async function getWeatherConditions(): Promise<string> {
   // Background refresh keeps the cache warm — serve instantly if available
   if (cachedData) {
     const ageMin = Math.round((Date.now() - cacheTimestamp) / 60_000);
-    const suffix = ageMin > 2 ? ` (${ageMin}m ago)` : '';
+    const suffix = ageMin > 6 ? ` (${ageMin}m ago)` : '';
     return formatWeatherSummary(cachedData, ECOWITT_STATION_NAME) + suffix;
   }
 
