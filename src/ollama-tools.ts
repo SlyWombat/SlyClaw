@@ -165,6 +165,19 @@ const OLLAMA_TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'get_weather',
+      description:
+        'Get current weather conditions from the home weather station. Returns real-time outdoor temperature, humidity, wind speed and direction, rain rate, UV index, pressure, and indoor temperature. Use this whenever the user asks about the weather, temperature, how hot or cold it is, rain, wind, UV, or current conditions outside.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'delegate_to_claude',
       description:
         'Hand off this task to the Claude agent. Use this when the request requires: scheduling or cancelling tasks/reminders, reading or writing files, running commands, managing groups, accessing the database, or any capability beyond web search and URL fetching. Also use this if you are unsure or cannot answer accurately with your available tools.',
@@ -475,6 +488,10 @@ async function executeTool(
       const taskId = typeof args.task_id === 'string' ? args.task_id : String(args.task_id ?? '');
       if (!taskId) return 'Error: task_id parameter is required';
       return deleteScheduledTask(taskId, ctx.groupFolder);
+    }
+    if (name === 'get_weather') {
+      const { getWeatherConditions } = await import('./weather-station.js');
+      return await getWeatherConditions();
     }
     if (name === 'delegate_to_claude') {
       const reason = typeof args.reason === 'string' ? args.reason : 'complex task';
