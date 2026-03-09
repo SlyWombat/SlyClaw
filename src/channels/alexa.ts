@@ -106,10 +106,16 @@ export class AlexaChannel implements Channel {
             .getResponse();
         } else {
           // Slow response — agent is still running, cache result when ready
+          const slowAcks = [
+            "Still thinking. Ask me what I found in a moment.",
+            "Give me a second. Ask what I found when you're ready.",
+            "Not done yet. Check back in a moment.",
+            "Working on it. Try asking what I found shortly.",
+            "Bit slow on this one. Ask what I found in a moment.",
+          ];
+          const ack = slowAcks[Math.floor(Math.random() * slowAcks.length)];
           return input.responseBuilder
-            .speak(
-              "I'm working on that. Ask me 'what did you find' in a moment when I'm done.",
-            )
+            .speak(ack)
             .withShouldEndSession(true)
             .getResponse();
         }
@@ -123,8 +129,8 @@ export class AlexaChannel implements Channel {
       handle: (input) => {
         if (!this.lastResult) {
           return input.responseBuilder
-            .speak("I don't have a result yet. I might still be working on it.")
-            .reprompt('Is there anything else?')
+            .speak("Nothing yet. Still working on it, apparently.")
+            .withShouldEndSession(true)
             .getResponse();
         }
         const speech =
