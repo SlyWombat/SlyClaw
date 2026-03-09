@@ -58,9 +58,9 @@ function checkTunnel(): CheckResult {
       stdio: 'pipe',
       encoding: 'utf-8',
     }).trim();
-    return { name: 'Tunnel', ok: status === 'active' };
+    return { name: 'Secret Passage', ok: status === 'active' };
   } catch {
-    return { name: 'Tunnel', ok: false, detail: 'not running' };
+    return { name: 'Secret Passage', ok: false, detail: 'not running' };
   }
 }
 
