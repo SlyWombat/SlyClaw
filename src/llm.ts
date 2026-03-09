@@ -300,7 +300,10 @@ export async function callOllama(
     `  - NEVER say you cannot do something — use delegate_to_claude instead.\n` +
     `  - Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n` +
     `---\n`;
-  const fullSystemPrompt = ollamaPreamble + systemPrompt;
+  // The group CLAUDE.md is written for the Claude container agent — it references
+  // tools (bash, files, browser) that Qwen doesn't have and adds ~2000 tokens of
+  // irrelevant context. The preamble above is all Qwen needs.
+  const fullSystemPrompt = ollamaPreamble;
 
   const ctx: OllamaToolContext = { groupFolder, chatJid };
 
