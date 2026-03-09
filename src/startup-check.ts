@@ -89,7 +89,7 @@ export function detectStatusCommand(text: string): boolean {
   );
 }
 
-export async function buildStatusReport(): Promise<string> {
+export async function buildStatusReport(plain = false): Promise<string> {
   const checks = await Promise.all([
     Promise.resolve(checkDocker()),
     checkOllama(),
@@ -102,12 +102,15 @@ export async function buildStatusReport(): Promise<string> {
   const failed = checks.filter((c) => !c.ok);
 
   const statusLines = checks
-    .map((c) => `${c.ok ? '✅' : '❌'} ${c.name}${c.detail ? ` — ${c.detail}` : ''}`)
+    .map((c) => {
+      const icon = plain ? (c.ok ? 'OK' : 'FAILED') : (c.ok ? '✅' : '❌');
+      return `${icon} ${c.name}${c.detail ? ` — ${c.detail}` : ''}`;
+    })
     .join('\n');
 
   const header = allOk
     ? 'All systems operational. Not that you had any reason to doubt me.'
-    : `⚠️ ${failed.length} check(s) failed — you might want to look into that.`;
+    : `${plain ? 'Warning:' : '⚠️'} ${failed.length} check(s) failed — you might want to look into that.`;
 
   return `${header}\n\n${statusLines}`;
 }

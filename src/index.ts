@@ -374,7 +374,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const lastMsg = missedMessages[missedMessages.length - 1];
   const rawForStatus = lastMsg.content.replace(TRIGGER_PATTERN, '').trim();
   if (detectStatusCommand(rawForStatus)) {
-    const report = await buildStatusReport();
+    const report = await buildStatusReport(chatJid.startsWith('alexa:'));
     await sendToChannel(chatJid, report);
     lastAgentTimestamp[chatJid] = missedMessages[missedMessages.length - 1].timestamp;
     saveState();
