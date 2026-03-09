@@ -17,6 +17,7 @@ import {
   ALEXA_PORT,
   ASSISTANT_NAME,
   DATA_DIR,
+  ECOWITT_APP_KEY,
   ECOWITT_LOCAL_PORT,
   GROUPS_DIR,
   IDLE_TIMEOUT,
@@ -704,10 +705,11 @@ async function main(): Promise<void> {
     await alexa.connect();
   }
 
-  // Start Ecowitt local push receiver if port is configured
-  if (ECOWITT_LOCAL_PORT) {
-    const { startLocalPushReceiver } = await import('./weather-station.js');
-    startLocalPushReceiver();
+  // Start Ecowitt weather background refresh (and local push receiver if configured)
+  if (ECOWITT_APP_KEY || ECOWITT_LOCAL_PORT) {
+    const { startWeatherBackgroundRefresh, startLocalPushReceiver } = await import('./weather-station.js');
+    startWeatherBackgroundRefresh();
+    if (ECOWITT_LOCAL_PORT) startLocalPushReceiver();
   }
 
   // Start subsystems (independently of connection handler)

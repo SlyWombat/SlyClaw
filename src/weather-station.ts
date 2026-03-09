@@ -71,10 +71,32 @@ interface EcowittApiResponse {
 let cachedData: EcowittRealTimeData | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60_000; // 1 minute
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 export function injectLocalData(data: EcowittRealTimeData): void {
   cachedData = data;
   cacheTimestamp = Date.now();
+}
+
+// Start background polling so get_weather always returns from cache instantly.
+// Called once from src/index.ts after config is ready.
+export function startWeatherBackgroundRefresh(): void {
+  if (!ECOWITT_APP_KEY || !ECOWITT_API_KEY || !ECOWITT_MAC) return;
+  if (refreshTimer) return; // already running
+
+  const refresh = () => {
+    fetchFromCloud()
+      .then((data) => {
+        cachedData = data;
+        cacheTimestamp = Date.now();
+        logger.debug('Weather cache refreshed');
+      })
+      .catch((err) => logger.warn({ err }, 'Background weather refresh failed'));
+  };
+
+  refresh(); // immediate first fetch
+  refreshTimer = setInterval(refresh, CACHE_TTL_MS);
+  logger.info({ intervalMs: CACHE_TTL_MS }, 'Weather background refresh started');
 }
 
 // ---------------------------------------------------------------------------
@@ -208,11 +230,14 @@ export async function getWeatherConditions(): Promise<string> {
     return 'Weather station not configured. Set ECOWITT_APP_KEY, ECOWITT_API_KEY, and ECOWITT_MAC in .env';
   }
 
-  // Return cached data if fresh
-  if (cachedData && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
-    return formatWeatherSummary(cachedData, ECOWITT_STATION_NAME);
+  // Background refresh keeps the cache warm — serve instantly if available
+  if (cachedData) {
+    const ageMin = Math.round((Date.now() - cacheTimestamp) / 60_000);
+    const suffix = ageMin > 2 ? ` (${ageMin}m ago)` : '';
+    return formatWeatherSummary(cachedData, ECOWITT_STATION_NAME) + suffix;
   }
 
+  // Cache not yet populated (first startup before background refresh fires) — fetch now
   try {
     const data = await fetchFromCloud();
     cachedData = data;
@@ -220,11 +245,6 @@ export async function getWeatherConditions(): Promise<string> {
     return formatWeatherSummary(data, ECOWITT_STATION_NAME);
   } catch (err) {
     logger.warn({ err }, 'Ecowitt cloud fetch failed');
-    // Fall back to stale cache if available
-    if (cachedData) {
-      const ageMin = Math.round((Date.now() - cacheTimestamp) / 60_000);
-      return `(stale data, ${ageMin}m old)\n` + formatWeatherSummary(cachedData, ECOWITT_STATION_NAME);
-    }
     return `Could not fetch weather: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
