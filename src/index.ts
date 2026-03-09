@@ -301,6 +301,51 @@ async function runOllamaRequest(
   }
 }
 
+async function runGeminiRequest(
+  group: RegisteredGroup,
+  messages: NewMessage[],
+  chatJid: string,
+  model: string,
+): Promise<'success' | 'error' | 'fallback'> {
+  const userText = messages
+    .map((m) => {
+      const content = m.content.replace(TRIGGER_PATTERN, '').trim();
+      return messages.length > 1 ? `${m.sender_name}: ${content}` : content;
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  if (!userText) return 'success';
+
+  try {
+    logger.info({ group: group.name, model }, 'Running Gemini request');
+    const { callGemini } = await import('./gemini.js');
+    const reply = await callGemini(model, group.folder, chatJid, userText);
+
+    if (reply && CAPABILITY_DENIAL_RE.test(reply)) {
+      logger.info({ group: group.name, model, reply }, 'Gemini denied capability — delegating to Claude');
+      throw new DelegateToClaudeError('model declined to use available tools');
+    }
+
+    if (reply) {
+      await sendToChannel(chatJid, reply);
+    } else {
+      await sendToChannel(chatJid, '_(no response from model)_');
+    }
+    return 'success';
+  } catch (err: unknown) {
+    if (err instanceof DelegateToClaudeError) {
+      logger.info({ group: group.name, model, reason: err.message }, 'Gemini delegating to Claude');
+      await sendToChannel(chatJid, `_(handing off to Claude: ${err.message})_`);
+      return 'fallback';
+    }
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.error({ group: group.name, model, err }, 'Gemini request failed');
+    await sendToChannel(chatJid, `⚠️ *${model}* failed: ${errMsg}\nFalling back to Claude...`);
+    return 'fallback';
+  }
+}
+
 /**
  * Process all pending messages for a group.
  * Called by the GroupQueue when it's this group's turn.
@@ -377,7 +422,25 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
 
     if (result === 'fallback') {
-      // Ollama failed — fall through to Claude below (don't return)
+      // fall through to Claude
+    } else {
+      if (result === 'error') {
+        lastAgentTimestamp[chatJid] = previousCursor;
+        saveState();
+        return false;
+      }
+      return true;
+    }
+  }
+
+  // --- Gemini path ---
+  if (currentLlm.type === 'gemini') {
+    const result = await runGeminiRequest(group, missedMessages, chatJid, currentLlm.model);
+    cancelAck();
+    await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
+
+    if (result === 'fallback') {
+      // fall through to Claude
     } else {
       if (result === 'error') {
         lastAgentTimestamp[chatJid] = previousCursor;

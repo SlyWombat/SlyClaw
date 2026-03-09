@@ -21,7 +21,7 @@ import { OllamaApiMessage, OllamaToolContext, callOllamaWithTools } from './olla
 // Types
 // ---------------------------------------------------------------------------
 
-export type LlmChoice = { type: 'claude' } | { type: 'ollama'; model: string };
+export type LlmChoice = { type: 'claude' } | { type: 'ollama'; model: string } | { type: 'gemini'; model: string };
 
 export type LlmCommand =
   | { action: 'status' }
@@ -48,24 +48,28 @@ export function setGroupLlm(groupFolder: string, choice: LlmChoice): void {
 }
 
 export function formatLlmName(choice: LlmChoice): string {
-  return choice.type === 'claude' ? 'Claude (Anthropic)' : `Ollama / ${choice.model}`;
+  if (choice.type === 'claude') return 'Claude (Anthropic)';
+  if (choice.type === 'gemini') return `Gemini / ${choice.model}`;
+  return `Ollama / ${choice.model}`;
 }
 
 function parseLlmString(s: string): LlmChoice {
   if (s === 'claude') return { type: 'claude' };
   if (s.startsWith('ollama:')) return { type: 'ollama', model: s.slice(7) };
+  if (s.startsWith('gemini:')) return { type: 'gemini', model: s.slice(7) };
   return { type: 'claude' };
 }
 
 function serializeLlm(choice: LlmChoice): string {
-  return choice.type === 'claude' ? 'claude' : `ollama:${choice.model}`;
+  if (choice.type === 'claude') return 'claude';
+  if (choice.type === 'gemini') return `gemini:${choice.model}`;
+  return `ollama:${choice.model}`;
 }
 
 function defaultLlm(): LlmChoice {
   if (!DEFAULT_LLM || DEFAULT_LLM === 'claude') return { type: 'claude' };
-  if (DEFAULT_LLM.startsWith('ollama:')) {
-    return { type: 'ollama', model: DEFAULT_LLM.slice(7) };
-  }
+  if (DEFAULT_LLM.startsWith('ollama:')) return { type: 'ollama', model: DEFAULT_LLM.slice(7) };
+  if (DEFAULT_LLM.startsWith('gemini:')) return { type: 'gemini', model: DEFAULT_LLM.slice(7) };
   return { type: 'claude' };
 }
 
@@ -119,6 +123,16 @@ function parseLlmTarget(target: string): LlmChoice | null {
     return { type: 'claude' };
   }
 
+  // Gemini aliases
+  if (t === 'gemini' || t === 'google') return { type: 'gemini', model: 'gemini-2.0-flash-lite' };
+  if (t === 'gemini flash' || t === 'gemini fast') return { type: 'gemini', model: 'gemini-2.0-flash' };
+  if (t === 'gemini pro' || t === 'gemini smart') return { type: 'gemini', model: 'gemini-1.5-pro' };
+  if (t.startsWith('gemini:') || t.startsWith('gemini/')) {
+    return { type: 'gemini', model: target.slice(7) };
+  }
+  // Direct gemini model names (gemini-2.0-flash-lite, gemini-1.5-pro, etc.)
+  if (/^gemini-/.test(t)) return { type: 'gemini', model: t };
+
   // "ollama" or "qwen" alone → default mid-size model
   if (t === 'ollama' || t === 'qwen') return { type: 'ollama', model: 'qwen2.5:3b' };
   // "qwen mini" / "qwen small" / "qwen fast" → lighter 1.5b model
@@ -165,13 +179,23 @@ export async function getAvailableLlms(): Promise<Array<{ label: string; id: str
         const sizeMb = Math.round(m.size / 1024 / 1024);
         const sizeStr = sizeMb > 1000 ? `${(sizeMb / 1024).toFixed(1)} GB` : `${sizeMb} MB`;
         result.push({
-          label: `Ollama / ${m.name} (${sizeStr}) — local, chat-only`,
+          label: `Ollama / ${m.name} (${sizeStr}) — local`,
           id: `ollama:${m.name}`,
         });
       }
     }
   } catch {
     result.push({ label: 'Ollama (not reachable)', id: '__ollama_offline__' });
+  }
+
+  try {
+    const { getAvailableGeminiModels } = await import('./gemini.js');
+    const geminiModels = await getAvailableGeminiModels();
+    for (const m of geminiModels) {
+      result.push({ label: `Gemini / ${m} — cloud, tools`, id: `gemini:${m}` });
+    }
+  } catch {
+    // Gemini not configured
   }
 
   return result;

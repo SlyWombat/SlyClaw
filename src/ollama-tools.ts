@@ -59,7 +59,7 @@ interface OllamaChatResponse {
 // Tool definitions
 // ---------------------------------------------------------------------------
 
-const OLLAMA_TOOLS = [
+export const OLLAMA_TOOLS = [
   {
     type: 'function' as const,
     function: {
@@ -454,7 +454,7 @@ export interface OllamaToolContext {
   chatJid: string;
 }
 
-async function executeTool(
+export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   ctx: OllamaToolContext,
