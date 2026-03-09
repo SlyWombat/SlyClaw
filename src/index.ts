@@ -65,6 +65,7 @@ import { GroupQueue } from './group-queue.js';
 import { startIpcWatcher } from './ipc.js';
 import { formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { runStartupCheck } from './startup-check.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
@@ -810,6 +811,12 @@ async function main(): Promise<void> {
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
   startMessageLoop();
+
+  // Post startup health check to main WhatsApp group
+  const mainJid = Object.entries(registeredGroups).find(([, g]) => g.folder === MAIN_GROUP_FOLDER)?.[0];
+  if (mainJid) {
+    runStartupCheck((text) => sendToChannel(mainJid, text)).catch(() => {});
+  }
 }
 
 // Guard: only run when executed directly, not when imported by tests
