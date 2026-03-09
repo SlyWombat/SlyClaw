@@ -167,7 +167,7 @@ const OLLAMA_TOOLS = [
     function: {
       name: 'get_weather',
       description:
-        'Get current weather conditions from the home weather station. Returns real-time outdoor temperature, humidity, wind speed and direction, rain rate, UV index, pressure, and indoor temperature. Use this whenever the user asks about the weather, temperature, how hot or cold it is, rain, wind, UV, or current conditions outside.',
+        'Get current weather conditions from the home weather station. NO location parameter needed — this station is always at the user\'s home. Call this immediately whenever the user asks about weather, temperature, rain, wind, UV, pressure, or conditions outside. NEVER ask the user for their location — just call this tool.',
       parameters: {
         type: 'object',
         properties: {},
