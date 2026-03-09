@@ -279,6 +279,7 @@ export async function callOllama(
     `  - web_search: search the web for current info\n` +
     `  - fetch_url: read a web page\n` +
     `  - get_current_time: get the current date and time\n` +
+    `  - get_weather: get real-time conditions from the home weather station (temperature, humidity, wind, rain, UV, pressure)\n` +
     `  - list_scheduled_tasks: list all recurring tasks/reminders set up for this group\n` +
     `  - create_scheduled_task: create a new scheduled task (requires prompt + cron expression)\n` +
     `  - delete_scheduled_task: cancel a scheduled task by ID\n` +
@@ -291,6 +292,7 @@ export async function callOllama(
     `IMPORTANT RULES:\n` +
     `  - When asked about scheduled tasks or reminders, call list_scheduled_tasks.\n` +
     `  - When asked about the current date or time, call get_current_time.\n` +
+    `  - When asked about weather, temperature, rain, wind, UV, or conditions outside, call get_weather. Do NOT ask for a location — the station is at the user's home.\n` +
     `  - When asked to search or fetch web content, call web_search or fetch_url.\n` +
     `  - When asked to schedule or cancel tasks, use create_scheduled_task or delete_scheduled_task.\n` +
     `  - When asked about email, inbox, calendar, files, or anything requiring system access, call delegate_to_claude.\n` +
