@@ -511,6 +511,13 @@ async function executeTool(
 
 const MAX_TOOL_STEPS = 5;
 
+// Weather keywords that trigger a proactive get_weather pre-call.
+// If the user's message matches, we execute get_weather before the first
+// LLM inference and inject the result as an already-completed tool turn.
+// This avoids relying on qwen to decide to call the tool itself.
+const WEATHER_INTENT_RE =
+  /\b(weather|temperature|temp\b|raining|rain|wind|humidity|humid|uv index|uv\b|pressure|outside|outdoor|how (hot|cold|warm|cool)|is it (hot|cold|warm|cool|raining|sunny|cloudy))\b/i;
+
 export async function callOllamaWithTools(
   model: string,
   messages: OllamaApiMessage[],
@@ -519,6 +526,25 @@ export async function callOllamaWithTools(
   maxSteps = MAX_TOOL_STEPS,
 ): Promise<string> {
   const working: OllamaApiMessage[] = [...messages];
+
+  // If the last user message is clearly about weather, pre-call get_weather
+  // so Qwen has the data and only needs to write the response (no tool-call decision).
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+  if (lastUser && WEATHER_INTENT_RE.test(lastUser.content)) {
+    try {
+      const weatherResult = await executeTool('get_weather', {}, ctx);
+      // Inject as a completed tool turn — Qwen sees the result, skips the call step
+      working.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ function: { name: 'get_weather', arguments: {} } }],
+      });
+      working.push({ role: 'tool', content: weatherResult });
+      logger.info('Pre-called get_weather based on weather intent in message');
+    } catch {
+      // Non-fatal — let Qwen handle it normally
+    }
+  }
 
   for (let step = 0; step < maxSteps; step++) {
     const res = await fetch(`${OLLAMA_LOCAL_URL}/api/chat`, {
