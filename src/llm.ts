@@ -292,7 +292,6 @@ export async function callOllama(
     `IMPORTANT RULES:\n` +
     `  - When asked about scheduled tasks or reminders, call list_scheduled_tasks.\n` +
     `  - When asked about the current date or time, call get_current_time.\n` +
-    `  - When asked about weather, temperature, rain, wind, UV, or conditions outside, call get_weather. Do NOT ask for a location — the station is at the user's home.\n` +
     `  - When asked to search or fetch web content, call web_search or fetch_url.\n` +
     `  - When asked to schedule or cancel tasks, use create_scheduled_task or delete_scheduled_task.\n` +
     `  - When asked about email, inbox, calendar, files, or anything requiring system access, call delegate_to_claude.\n` +
@@ -300,7 +299,15 @@ export async function callOllama(
     `  - NEVER say you cannot do something — use delegate_to_claude instead.\n` +
     `  - Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n` +
     `---\n`;
-  const fullSystemPrompt = ollamaPreamble + systemPrompt;
+  // Inject current weather into context if available — eliminates need for a tool call
+  let weatherContext = '';
+  try {
+    const { getCachedWeather } = await import('./weather-station.js');
+    const wx = getCachedWeather();
+    if (wx) weatherContext = `\nCurrent home weather station readings:\n${wx}\n`;
+  } catch { /* weather module not available */ }
+
+  const fullSystemPrompt = ollamaPreamble + (weatherContext ? weatherContext + '---\n' : '') + systemPrompt;
 
   const ctx: OllamaToolContext = { groupFolder, chatJid };
 

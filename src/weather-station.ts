@@ -73,6 +73,13 @@ let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+// Synchronous getter — returns formatted summary if cache is populated, null otherwise.
+// Used to inject weather into the Ollama system prompt without a tool call.
+export function getCachedWeather(): string | null {
+  if (!cachedData) return null;
+  return formatWeatherSummary(cachedData, ECOWITT_STATION_NAME);
+}
+
 export function injectLocalData(data: EcowittRealTimeData): void {
   cachedData = data;
   cacheTimestamp = Date.now();
