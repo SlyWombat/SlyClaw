@@ -354,15 +354,26 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   );
 
   await getChannelForJid(chatJid)?.setTyping?.(chatJid, true);
-  // Skip sarcastic acks for voice channels — they consume the pending HTTP response slot
+
+  // Deferred sarcastic ack: only send if no reply arrives within 8s.
+  // Skipped for voice channels (Alexa manages its own pending response slot).
+  let ackTimer: ReturnType<typeof setTimeout> | null = null;
   if (!chatJid.startsWith('alexa:')) {
-    await sendToChannel(chatJid, SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length]);
+    const ackText = SNAPPY_ACKS[snappyAckIndex % SNAPPY_ACKS.length];
     snappyAckIndex++;
+    ackTimer = setTimeout(() => {
+      ackTimer = null;
+      sendToChannel(chatJid, ackText).catch(() => {});
+    }, 8000);
   }
+  const cancelAck = () => {
+    if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; }
+  };
 
   // --- Ollama path ---
   if (currentLlm.type === 'ollama') {
     const result = await runOllamaRequest(group, missedMessages, chatJid, currentLlm.model);
+    cancelAck();
     await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
 
     if (result === 'fallback') {
@@ -397,6 +408,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
+        cancelAck(); // Cancel ack now that we have a real answer
         await sendToChannel(chatJid,text);
         outputSentToUser = true;
       }
@@ -408,6 +420,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   });
 
+  cancelAck();
   await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
   queue.killContainer(chatJid);
