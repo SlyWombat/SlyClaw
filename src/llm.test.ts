@@ -224,10 +224,10 @@ describe('getGroupLlm / setGroupLlm', () => {
     _initTestDatabase();
   });
 
-  it('returns a valid LlmChoice by default (type is "claude" or "ollama")', () => {
+  it('returns a valid LlmChoice by default (type is "claude", "ollama", or "gemini")', () => {
     // The default depends on DEFAULT_LLM in .env — we just verify it is a valid choice
     const choice = getGroupLlm('__brand_new_group__');
-    expect(['claude', 'ollama']).toContain(choice.type);
+    expect(['claude', 'ollama', 'gemini']).toContain(choice.type);
   });
 
   it('persists an ollama 7b choice and reads it back', () => {
