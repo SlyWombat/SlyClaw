@@ -65,7 +65,7 @@ import { GroupQueue } from './group-queue.js';
 import { startIpcWatcher } from './ipc.js';
 import { formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { runStartupCheck } from './startup-check.js';
+import { buildStatusReport, detectStatusCommand, runStartupCheck } from './startup-check.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
@@ -368,6 +368,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       TRIGGER_PATTERN.test(m.content.trim()),
     );
     if (!hasTrigger) return true;
+  }
+
+  // --- Status command ("what is your status", "are you ok", etc.) ---
+  const lastMsg = missedMessages[missedMessages.length - 1];
+  const rawForStatus = lastMsg.content.replace(TRIGGER_PATTERN, '').trim();
+  if (detectStatusCommand(rawForStatus)) {
+    const report = await buildStatusReport();
+    await sendToChannel(chatJid, report);
+    lastAgentTimestamp[chatJid] = missedMessages[missedMessages.length - 1].timestamp;
+    saveState();
+    return true;
   }
 
   // --- LLM management commands (status / list / switch) ---

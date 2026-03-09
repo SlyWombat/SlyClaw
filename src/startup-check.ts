@@ -73,6 +73,40 @@ function checkDocker(): CheckResult {
   }
 }
 
+export function detectStatusCommand(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/[?!.]+$/, '').trim();
+  return (
+    /^(status|system status|health|health check)$/.test(t) ||
+    /^(what('?s| is) (your )?(status|health|state))/.test(t) ||
+    /^(are you (ok|okay|alive|up|running|working|online|good))/.test(t) ||
+    /^(how are you( doing)?)$/.test(t) ||
+    /^(everything (ok|okay|good|working|running)\??)$/.test(t)
+  );
+}
+
+export async function buildStatusReport(): Promise<string> {
+  const checks = await Promise.all([
+    Promise.resolve(checkDocker()),
+    checkOllama(),
+    Promise.resolve(checkGemini()),
+    Promise.resolve(checkEcowitt()),
+    Promise.resolve(checkTunnel()),
+  ]);
+
+  const allOk = checks.every((c) => c.ok);
+  const failed = checks.filter((c) => !c.ok);
+
+  const statusLines = checks
+    .map((c) => `${c.ok ? '✅' : '❌'} ${c.name}${c.detail ? ` — ${c.detail}` : ''}`)
+    .join('\n');
+
+  const header = allOk
+    ? 'All systems operational. Not that you had any reason to doubt me.'
+    : `⚠️ ${failed.length} check(s) failed — you might want to look into that.`;
+
+  return `${header}\n\n${statusLines}`;
+}
+
 export async function runStartupCheck(
   sendMessage: (text: string) => Promise<void>,
 ): Promise<void> {
@@ -91,10 +125,7 @@ export async function runStartupCheck(
   const failed = checks.filter((c) => !c.ok);
 
   const statusLines = checks
-    .map((c) => {
-      const icon = c.ok ? '✅' : '❌';
-      return `${icon} ${c.name}${c.detail ? ` — ${c.detail}` : ''}`;
-    })
+    .map((c) => `${c.ok ? '✅' : '❌'} ${c.name}${c.detail ? ` — ${c.detail}` : ''}`)
     .join('\n');
 
   const header = allOk
@@ -103,10 +134,8 @@ export async function runStartupCheck(
 
   startupMsgIndex++;
 
-  const message = `${header}\n\n${statusLines}`;
-
   try {
-    await sendMessage(message);
+    await sendMessage(`${header}\n\n${statusLines}`);
     logger.info({ allOk, failedCount: failed.length }, 'Startup check posted to WhatsApp');
   } catch (err) {
     logger.warn({ err }, 'Failed to send startup check message');
