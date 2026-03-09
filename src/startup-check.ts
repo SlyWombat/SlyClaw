@@ -76,8 +76,13 @@ function checkDocker(): CheckResult {
 export function detectStatusCommand(text: string): boolean {
   const t = text.trim().toLowerCase().replace(/[?!.]+$/, '').trim();
   return (
+    // Exact phrases
     /^(status|system status|health|health check)$/.test(t) ||
+    // "what is your status", "what's your health", etc.
     /^(what('?s| is) (your )?(status|health|state))/.test(t) ||
+    // Alexa mangles "what is your status" → "it's status" / "its status"
+    /^(it'?s |your |my )?(status|health)(check)?$/.test(t) ||
+    // "are you ok/alive/up/running"
     /^(are you (ok|okay|alive|up|running|working|online|good))/.test(t) ||
     /^(how are you( doing)?)$/.test(t) ||
     /^(everything (ok|okay|good|working|running)\??)$/.test(t)
