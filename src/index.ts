@@ -98,7 +98,7 @@ let snappyAckIndex = 0;
 // a capability it actually has (web search, current time/date awareness).
 // When detected, we auto-delegate to Claude instead of sending a useless reply.
 const CAPABILITY_DENIAL_RE =
-  /I (don't|do not|can't|cannot|am unable to|am not able to) (have )?(the ability to |access to |)?(browse|search the web|access (the internet|external|real.?time|current)|check the (current|present) (time|date)|provide (current|real.?time|up.?to.?date))/i;
+  /I (don't|do not|can't|cannot|am unable to|am not able to) (have )?(the ability to |access to |)?(browse|search the web|access (the internet|external|real.?time|current|your email|emails?|your (files?|calendar|inbox))|check the (current|present) (time|date)|provide (current|real.?time|up.?to.?date)|read (your )?(email|inbox|files?)|send (an? )?(email|message|reply))/i;
 
 let whatsapp: WhatsAppChannel;
 const channels: Channel[] = [];
@@ -337,7 +337,6 @@ async function runGeminiRequest(
   } catch (err: unknown) {
     if (err instanceof DelegateToClaudeError) {
       logger.info({ group: group.name, model, reason: err.message }, 'Gemini delegating to Claude');
-      await sendToChannel(chatJid, `_(handing off to Claude: ${err.message})_`);
       return 'fallback';
     }
     const errMsg = err instanceof Error ? err.message : String(err);

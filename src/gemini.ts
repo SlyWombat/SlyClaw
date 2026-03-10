@@ -93,9 +93,9 @@ function buildSystemPrompt(model: string): string {
     `  - When asked about weather, temperature, rain, wind, UV, or conditions outside: call get_weather immediately. NEVER ask for location — the station is at the user's home.\n` +
     `  - When asked to search or fetch web content, call web_search or fetch_url.\n` +
     `  - When asked to schedule or cancel tasks, use create_scheduled_task or delete_scheduled_task.\n` +
-    `  - When asked about email, inbox, calendar, files, or anything requiring system access, call delegate_to_claude.\n` +
+    `  - When asked about email (read, send, search, reply), calendar, contacts, files, bash commands, or anything requiring system access, call delegate_to_claude immediately.\n` +
     `  - If you are unsure whether you can do something, call delegate_to_claude rather than guessing.\n` +
-    `  - NEVER say you cannot do something — use delegate_to_claude instead.\n` +
+    `  - NEVER say you cannot do something — use delegate_to_claude instead. This is mandatory.\n` +
     `  - Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n`
   );
 }

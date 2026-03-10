@@ -180,7 +180,7 @@ export const OLLAMA_TOOLS = [
     function: {
       name: 'delegate_to_claude',
       description:
-        'Hand off this task to the Claude agent. Use this when the request requires: scheduling or cancelling tasks/reminders, reading or writing files, running commands, managing groups, accessing the database, or any capability beyond web search and URL fetching. Also use this if you are unsure or cannot answer accurately with your available tools.',
+        'Hand off this task to the Claude agent, which has full system access. Use this for: email (read inbox, send, search, reply), calendar, contacts, reading or writing files, running bash commands, managing groups, accessing the database, browser automation, or any capability beyond web search and URL fetching. When in doubt, call this — Claude can do anything you cannot.',
       parameters: {
         type: 'object',
         properties: {
