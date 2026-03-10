@@ -98,7 +98,11 @@ let snappyAckIndex = 0;
 // a capability it actually has (web search, current time/date awareness).
 // When detected, we auto-delegate to Claude instead of sending a useless reply.
 const CAPABILITY_DENIAL_RE =
-  /I (don't|do not|can't|cannot|am unable to|am not able to) (have )?(the ability to |access to |)?(browse|search the web|access (the internet|external|real.?time|current|your email|emails?|your (files?|calendar|inbox))|check the (current|present) (time|date)|provide (current|real.?time|up.?to.?date)|read (your )?(email|inbox|files?)|send (an? )?(email|message|reply))/i;
+  /I('m| am| don't| do not| can't| cannot| am unable to| am not able to).{0,40}(capability|ability|access).{0,40}(email|inbox|files?|calendar|filesystem|file system|file operations)/i;
+
+// Intents that should always go straight to Claude — skip Gemini/Ollama entirely.
+const ESCALATE_TO_CLAUDE_RE =
+  /\b(email|inbox|send.{0,10}(email|message)|read.{0,10}(email|mail|inbox)|check.{0,10}(email|mail|inbox)|calendar|my files?|read.{0,10}file|write.{0,10}file|open.{0,10}file)\b/i;
 
 let whatsapp: WhatsAppChannel;
 const channels: Channel[] = [];
@@ -317,6 +321,12 @@ async function runGeminiRequest(
     .join('\n');
 
   if (!userText) return 'success';
+
+  // Short-circuit to Claude for requests that require email/file/calendar access
+  if (ESCALATE_TO_CLAUDE_RE.test(userText)) {
+    logger.info({ group: group.name, model }, 'Escalating to Claude (email/file intent detected)');
+    return 'fallback';
+  }
 
   try {
     logger.info({ group: group.name, model }, 'Running Gemini request');
