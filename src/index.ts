@@ -274,6 +274,12 @@ async function runOllamaRequest(
 
   if (!userText) return 'success'; // nothing to say
 
+  // Short-circuit to Claude for requests that require email/file/calendar access
+  if (ESCALATE_TO_CLAUDE_RE.test(userText)) {
+    logger.info({ group: group.name, model }, 'Escalating to Claude (email/file intent detected)');
+    return 'fallback';
+  }
+
   const systemPrompt = readGroupSystemPrompt(group.folder);
 
   try {
