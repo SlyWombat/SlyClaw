@@ -16,7 +16,7 @@ import { readEnvFile } from './env.js';
 // Read config values from .env (falls back to process.env).
 // Secrets are NOT read here — they stay on disk and are loaded only
 // where needed (container-runner.ts) to avoid leaking to child processes.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL', 'ALEXA_PORT', 'ALEXA_SKILL_ID', 'ECOWITT_APP_KEY', 'ECOWITT_API_KEY', 'ECOWITT_MAC', 'ECOWITT_STATION_NAME', 'ECOWITT_LOCAL_PORT', 'GOOGLE_API_KEY']);
+const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL', 'ALEXA_PORT', 'ALEXA_SKILL_ID', 'ECOWITT_APP_KEY', 'ECOWITT_API_KEY', 'ECOWITT_MAC', 'ECOWITT_STATION_NAME', 'ECOWITT_LOCAL_PORT', 'GOOGLE_API_KEY', 'SWITCHBOT_TOKEN', 'SWITCHBOT_SECRET']);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Nano';
@@ -111,3 +111,11 @@ export const ECOWITT_LOCAL_PORT = parseInt(
   process.env.ECOWITT_LOCAL_PORT || envConfig.ECOWITT_LOCAL_PORT || '0',
   10,
 );
+
+// SwitchBot smart-home — cloud API v1.1 credentials.
+// Generate in the SwitchBot app: Profile → Preferences → tap "App Version"
+// 10× to unlock Developer Options → Get Token.
+export const SWITCHBOT_TOKEN =
+  process.env.SWITCHBOT_TOKEN || envConfig.SWITCHBOT_TOKEN || '';
+export const SWITCHBOT_SECRET =
+  process.env.SWITCHBOT_SECRET || envConfig.SWITCHBOT_SECRET || '';

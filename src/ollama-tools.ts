@@ -178,6 +178,84 @@ export const OLLAMA_TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'switchbot_list_devices',
+      description:
+        'List all SwitchBot smart-home devices and scenes on the account. Use this to discover device names before reading their status or controlling them.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'switchbot_status',
+      description:
+        'Read the current status and sensor data of a SwitchBot device — e.g. temperature/humidity from a meter, on/off state of a plug, battery level, lock state. Provide the device name as shown in the SwitchBot app.',
+      parameters: {
+        type: 'object',
+        properties: {
+          device: {
+            type: 'string',
+            description:
+              'Device name as shown in the SwitchBot app (partial, case-insensitive match allowed).',
+          },
+        },
+        required: ['device'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'switchbot_control',
+      description:
+        'Send a command to a SwitchBot device. Common commands: turnOn, turnOff, press (Bot); lock, unlock (Lock); setPosition (Curtain, parameter like "0,ff,50"); setBrightness (Bulb, parameter 1-100); setColor (parameter "R:G:B"). Provide the device name as shown in the SwitchBot app.',
+      parameters: {
+        type: 'object',
+        properties: {
+          device: {
+            type: 'string',
+            description: 'Device name as shown in the SwitchBot app.',
+          },
+          command: {
+            type: 'string',
+            description:
+              'The command to send, e.g. turnOn, turnOff, press, lock, unlock, setPosition, setBrightness.',
+          },
+          parameter: {
+            type: 'string',
+            description:
+              'Optional command parameter. Omit (or use "default") for simple on/off/press/lock commands.',
+          },
+        },
+        required: ['device', 'command'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'switchbot_run_scene',
+      description:
+        'Run (execute) a SwitchBot scene by name. Scenes are automations configured in the SwitchBot app.',
+      parameters: {
+        type: 'object',
+        properties: {
+          scene: {
+            type: 'string',
+            description: 'Scene name as shown in the SwitchBot app.',
+          },
+        },
+        required: ['scene'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'delegate_to_claude',
       description:
         'Hand off this task to the Claude agent, which has full system access. Use this for: email (read inbox, send, search, reply), calendar, contacts, reading or writing files, running bash commands, managing groups, accessing the database, browser automation, or any capability beyond web search and URL fetching. When in doubt, call this — Claude can do anything you cannot.',
@@ -492,6 +570,27 @@ export async function executeTool(
     if (name === 'get_weather') {
       const { getWeatherConditions } = await import('./weather-station.js');
       return await getWeatherConditions();
+    }
+    if (name === 'switchbot_list_devices') {
+      const { switchBotListDevices } = await import('./switchbot.js');
+      return await switchBotListDevices();
+    }
+    if (name === 'switchbot_status') {
+      const { switchBotStatus } = await import('./switchbot.js');
+      const device = typeof args.device === 'string' ? args.device : String(args.device ?? '');
+      return await switchBotStatus(device);
+    }
+    if (name === 'switchbot_control') {
+      const { switchBotControl } = await import('./switchbot.js');
+      const device = typeof args.device === 'string' ? args.device : String(args.device ?? '');
+      const command = typeof args.command === 'string' ? args.command : String(args.command ?? '');
+      const parameter = typeof args.parameter === 'string' ? args.parameter : undefined;
+      return await switchBotControl(device, command, parameter);
+    }
+    if (name === 'switchbot_run_scene') {
+      const { switchBotRunScene } = await import('./switchbot.js');
+      const scene = typeof args.scene === 'string' ? args.scene : String(args.scene ?? '');
+      return await switchBotRunScene(scene);
     }
     if (name === 'delegate_to_claude') {
       const reason = typeof args.reason === 'string' ? args.reason : 'complex task';

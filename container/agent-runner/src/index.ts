@@ -444,6 +444,7 @@ async function runQuery(
         'NotebookEdit',
         'mcp__slyclaw__*',
         'mcp__ollama__*',
+        'mcp__switchbot__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -465,6 +466,14 @@ async function runQuery(
           env: {
             OLLAMA_HOST: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434',
             OLLAMA_DEFAULT_MODEL: process.env.OLLAMA_DEFAULT_MODEL || 'llama3.2',
+          },
+        },
+        switchbot: {
+          command: 'node',
+          args: [path.join(path.dirname(mcpServerPath), 'switchbot-mcp-stdio.js')],
+          env: {
+            SWITCHBOT_TOKEN: sdkEnv.SWITCHBOT_TOKEN ?? '',
+            SWITCHBOT_SECRET: sdkEnv.SWITCHBOT_SECRET ?? '',
           },
         },
       },

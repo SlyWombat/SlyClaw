@@ -213,6 +213,8 @@ function readSecrets(): Record<string, string> {
     'MS_GRAPH_CLIENT_ID',
     'MS_GRAPH_REFRESH_TOKEN',
     'MS_GRAPH_TENANT_ID',
+    'SWITCHBOT_TOKEN',
+    'SWITCHBOT_SECRET',
   ]);
 }
 
