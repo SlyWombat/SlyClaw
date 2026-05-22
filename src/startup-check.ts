@@ -58,9 +58,9 @@ function checkTunnel(): CheckResult {
       stdio: 'pipe',
       encoding: 'utf-8',
     }).trim();
-    return { name: 'Secret Passage', ok: status === 'active' };
+    return { name: 'Alexa Integration', ok: status === 'active' };
   } catch {
-    return { name: 'Secret Passage', ok: false, detail: 'not running' };
+    return { name: 'Alexa Integration', ok: false, detail: 'not running' };
   }
 }
 

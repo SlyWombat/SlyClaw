@@ -10,7 +10,7 @@ import path from 'path';
 
 interface GeminiPart {
   text?: string;
-  functionCall?: { name: string; args: Record<string, unknown> };
+  functionCall?: { name: string; args: Record<string, unknown>; thought_signature?: string };
   functionResponse?: { name: string; response: Record<string, unknown> };
 }
 
@@ -152,7 +152,7 @@ export async function callGemini(
       const weatherResult = await executeTool('get_weather', {}, ctx);
       contents.push(
         { role: 'user', parts: [{ text: userMessage }] },
-        { role: 'model', parts: [{ functionCall: { name: 'get_weather', args: {} } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'get_weather', args: {}, thought_signature: 'Getting weather from home station' } }] },
         { role: 'user', parts: [{ functionResponse: { name: 'get_weather', response: { output: weatherResult } } }] },
       );
       logger.info('Gemini: pre-called get_weather based on weather intent');
@@ -183,7 +183,7 @@ export async function callGemini(
     }
 
     // Execute tool
-    const { name, args } = fnCall.functionCall!;
+    const { name, args, thought_signature } = fnCall.functionCall!;
     logger.info({ tool: name, args }, 'Executing Gemini tool');
 
     let toolResult: string;
@@ -194,9 +194,9 @@ export async function callGemini(
       toolResult = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
     }
 
-    // Append model turn + tool result
+    // Append model turn + tool result (preserve thought_signature if present)
     contents.push(
-      { role: 'model', parts: [{ functionCall: { name, args } }] },
+      { role: 'model', parts: [{ functionCall: { name, args, thought_signature } }] },
       { role: 'user', parts: [{ functionResponse: { name, response: { output: toolResult } } }] },
     );
   }
