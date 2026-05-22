@@ -172,14 +172,26 @@ export class WhatsAppChannel implements Channel {
 
     // Download image attachments and pass base64 data to the message handler
     let imageAttachment: { base64: string; mimeType: string } | undefined;
-    if (msg.hasMedia && (msg.type === MessageTypes.IMAGE || msg.type === MessageTypes.STICKER)) {
+    let fileAttachment: { base64: string; mimeType: string; filename?: string } | undefined;
+
+    if (msg.hasMedia) {
       try {
         const media = await msg.downloadMedia() as MessageMedia;
         if (media?.data) {
-          imageAttachment = { base64: media.data, mimeType: media.mimetype };
+          // Images and stickers handled as imageAttachment for backward compatibility
+          if (msg.type === MessageTypes.IMAGE || msg.type === MessageTypes.STICKER) {
+            imageAttachment = { base64: media.data, mimeType: media.mimetype };
+          } else {
+            // All other file types (PDFs, documents, audio, video, etc.) as fileAttachment
+            fileAttachment = {
+              base64: media.data,
+              mimeType: media.mimetype,
+              filename: media.filename || 'attachment'
+            };
+          }
         }
       } catch (err) {
-        logger.warn({ err, chatJid }, 'Failed to download image attachment');
+        logger.warn({ err, chatJid, type: msg.type }, 'Failed to download attachment');
       }
     }
 
@@ -193,6 +205,7 @@ export class WhatsAppChannel implements Channel {
       is_from_me: fromMe,
       is_bot_message: isBotMessage,
       imageAttachment,
+      fileAttachment,
     });
   }
 

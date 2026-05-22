@@ -63,6 +63,8 @@ export interface NewMessage {
   is_bot_message?: boolean;
   // Optional image attachment — channel sets this; index.ts saves to disk and rewrites content
   imageAttachment?: { base64: string; mimeType: string };
+  // Optional file attachment (PDFs, documents, etc.) — channel sets this; index.ts saves to disk and rewrites content
+  fileAttachment?: { base64: string; mimeType: string; filename?: string };
 }
 
 export interface ScheduledTask {

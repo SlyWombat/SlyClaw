@@ -757,7 +757,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  // Shared inbound message handler — saves image attachments to disk before storing
+  // Shared inbound message handler — saves image and file attachments to disk before storing
   const handleInbound = (chatJid: string, msg: NewMessage): void => {
     if (msg.imageAttachment) {
       const group = registeredGroups[chatJid];
@@ -784,6 +784,59 @@ async function main(): Promise<void> {
         }
       }
     }
+
+    if (msg.fileAttachment) {
+      const group = registeredGroups[chatJid];
+      if (group) {
+        try {
+          const attachDir = path.join(GROUPS_DIR, group.folder, 'attachments');
+          fs.mkdirSync(attachDir, { recursive: true });
+
+          // Get file extension from mime type or filename
+          let ext = 'bin';
+          if (msg.fileAttachment.filename) {
+            const parts = msg.fileAttachment.filename.split('.');
+            if (parts.length > 1) ext = parts.pop()!;
+          } else if (msg.fileAttachment.mimeType) {
+            const mimeMap: Record<string, string> = {
+              'application/pdf': 'pdf',
+              'application/msword': 'doc',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+              'application/vnd.ms-excel': 'xls',
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+              'text/plain': 'txt',
+              'application/zip': 'zip',
+              'audio/mpeg': 'mp3',
+              'audio/ogg': 'ogg',
+              'video/mp4': 'mp4',
+            };
+            ext = mimeMap[msg.fileAttachment.mimeType] || ext;
+          }
+
+          const timestamp = new Date(msg.timestamp).toISOString().replace(/[:.]/g, '-');
+          const originalName = msg.fileAttachment.filename || 'attachment';
+          const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const filename = `${timestamp}_${safeName}`;
+
+          const hostPath = path.join(attachDir, filename);
+          fs.writeFileSync(hostPath, Buffer.from(msg.fileAttachment.base64, 'base64'));
+          const containerPath = `/workspace/group/attachments/${filename}`;
+
+          msg = {
+            ...msg,
+            content: msg.content
+              ? `${msg.content} [File: ${containerPath}]`
+              : `[File: ${containerPath}]`,
+            fileAttachment: undefined,
+          };
+          logger.info({ chatJid, path: containerPath, originalName }, 'File attachment saved');
+        } catch (err) {
+          logger.warn({ err, chatJid }, 'Failed to save file attachment');
+          msg = { ...msg, content: `${msg.content} [File - save failed]`, fileAttachment: undefined };
+        }
+      }
+    }
+
     storeMessage(msg);
   };
 
