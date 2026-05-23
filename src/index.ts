@@ -65,6 +65,7 @@ import { GroupQueue } from './group-queue.js';
 import { startIpcWatcher } from './ipc.js';
 import { formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { loadTaskSeeds } from './task-seeds.js';
 import { buildStatusReport, detectStatusCommand, runStartupCheck } from './startup-check.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
@@ -746,6 +747,7 @@ async function main(): Promise<void> {
   logger.info('Database initialized');
   loadState();
   ensureAlexaRegistered();
+  loadTaskSeeds();
 
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {

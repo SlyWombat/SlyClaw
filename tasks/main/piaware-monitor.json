@@ -1,0 +1,6 @@
+{
+  "id": "task-1779482566188-35zamh",
+  "schedule_type": "interval",
+  "schedule_value": "900000",
+  "context_mode": "isolated"
+}
