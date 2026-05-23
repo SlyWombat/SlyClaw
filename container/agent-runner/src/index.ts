@@ -510,6 +510,16 @@ async function runQuery(
         result: textResult || null,
         newSessionId
       });
+      // One-shot: end the input stream so the SDK's output iterable
+      // terminates and the for-await loop exits. Without this, the
+      // MessageStream stays open forever waiting for follow-up user
+      // messages (the SDK calls .next() on it indefinitely), keeping
+      // this loop alive even though the host never pipes more input —
+      // which is why containers used to idle until the 30-min _close
+      // timeout. Subagents/Task results emit before the top-level
+      // `result` message, so cutting the stream here is safe.
+      stream.end();
+      ipcPolling = false;
     }
   }
 
@@ -563,43 +573,24 @@ async function main(): Promise<void> {
     prompt += '\n' + pending.join('\n');
   }
 
-  // Query loop: run query → wait for IPC message → run new query → repeat
-  let resumeAt: string | undefined;
+  // Run a single query and exit. Host-side IPC follow-up piping is disabled
+  // (group-queue.ts sendMessage returns false unconditionally — each user
+  // message spawns a fresh container), so the old multi-turn wait loop served
+  // only to idle inside waitForIpcMessage until the host's 30-min IDLE_TIMEOUT
+  // fired a _close sentinel. That left every container alive for half an hour
+  // after its work was done, holding the group lock and blocking queued
+  // messages/tasks. Exiting immediately frees the group as soon as the
+  // agent's result is on stdout.
   try {
-    while (true) {
-      log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
-
-      const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv, resumeAt);
-      if (queryResult.newSessionId) {
-        sessionId = queryResult.newSessionId;
-      }
-      if (queryResult.lastAssistantUuid) {
-        resumeAt = queryResult.lastAssistantUuid;
-      }
-
-      // If _close was consumed during the query, exit immediately.
-      // Don't emit a session-update marker (it would reset the host's
-      // idle timer and cause a 30-min delay before the next _close).
-      if (queryResult.closedDuringQuery) {
-        log('Close sentinel consumed during query, exiting');
-        break;
-      }
-
-      // Emit session update so host can track it
-      writeOutput({ status: 'success', result: null, newSessionId: sessionId });
-
-      log('Query ended, waiting for next IPC message...');
-
-      // Wait for the next message or _close sentinel
-      const nextMessage = await waitForIpcMessage();
-      if (nextMessage === null) {
-        log('Close sentinel received, exiting');
-        break;
-      }
-
-      log(`Got new message (${nextMessage.length} chars), starting new query`);
-      prompt = nextMessage;
+    log(`Starting query (session: ${sessionId || 'new'})...`);
+    const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv);
+    if (queryResult.newSessionId) {
+      sessionId = queryResult.newSessionId;
     }
+    // Final session-update marker so the host has the latest session id
+    // even when the query produced no `result` message.
+    writeOutput({ status: 'success', result: null, newSessionId: sessionId });
+    log('Query complete, exiting');
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log(`Agent error: ${errorMessage}`);
@@ -611,6 +602,9 @@ async function main(): Promise<void> {
     });
     process.exit(1);
   }
+  // Explicit exit so any lingering MCP-server child processes or SDK
+  // sockets don't keep the event loop alive past the work being done.
+  process.exit(0);
 }
 
 main();
