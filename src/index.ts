@@ -446,12 +446,15 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // --- Ollama path ---
   if (currentLlm.type === 'ollama') {
     const result = await runOllamaRequest(group, missedMessages, chatJid, currentLlm.model);
-    cancelAck();
-    await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
 
     if (result === 'fallback') {
-      // fall through to Claude
+      // Hand off to Claude — leave the ack timer and typing indicator
+      // running so the user keeps seeing "working on it" feedback while
+      // Claude takes over. The Claude path below will cancel them when
+      // it produces a real reply.
     } else {
+      cancelAck();
+      await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
       if (result === 'error') {
         lastAgentTimestamp[chatJid] = previousCursor;
         saveState();
@@ -464,12 +467,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // --- Gemini path ---
   if (currentLlm.type === 'gemini') {
     const result = await runGeminiRequest(group, missedMessages, chatJid, currentLlm.model);
-    cancelAck();
-    await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
 
     if (result === 'fallback') {
-      // fall through to Claude
+      // Same as the Ollama fallback above — keep ack/typing alive for Claude.
     } else {
+      cancelAck();
+      await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
       if (result === 'error') {
         lastAgentTimestamp[chatJid] = previousCursor;
         saveState();
