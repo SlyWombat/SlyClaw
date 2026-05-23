@@ -228,6 +228,35 @@ export class WhatsAppChannel implements Channel {
     }
   }
 
+  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
+    if (!this.connected) {
+      logger.warn({ jid, filePath }, 'Cannot send file - WA disconnected');
+      throw new Error('WhatsApp not connected');
+    }
+
+    try {
+      const MessageMedia = wwebjs.MessageMedia;
+      const media = MessageMedia.fromFilePath(filePath);
+
+      // Mirror sendMessage's labelling: when the assistant doesn't own its
+      // own WA number, every outbound bot message must be tagged with
+      // `${ASSISTANT_NAME}:` — both so recipients can tell where it came
+      // from, and so the inbound handler's bot-message detection still
+      // matches echoed-back media (which exposes caption as `content`).
+      const prefixedCaption = ASSISTANT_HAS_OWN_NUMBER
+        ? caption
+        : caption
+          ? `${ASSISTANT_NAME}: ${caption}`
+          : `${ASSISTANT_NAME}:`;
+
+      await this.client.sendMessage(toWwebJid(jid), media, { caption: prefixedCaption });
+      logger.info({ jid, filePath, hasCaption: !!caption }, 'File sent');
+    } catch (err) {
+      logger.error({ err, jid, filePath }, 'Failed to send file');
+      throw err;
+    }
+  }
+
   isConnected(): boolean {
     return this.connected;
   }

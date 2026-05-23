@@ -16,6 +16,7 @@ import { CronExpressionParser } from 'cron-parser';
 
 import {
   DATA_DIR,
+  GROUPS_DIR,
   IPC_POLL_INTERVAL,
   MAIN_GROUP_FOLDER,
   TIMEZONE,
@@ -27,6 +28,7 @@ import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
+  sendFile?: (jid: string, filePath: string, caption?: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroupMetadata: (force: boolean) => Promise<void>;
@@ -40,6 +42,91 @@ export interface IpcDeps {
 }
 
 let ipcWatcherRunning = false;
+
+interface SendablePrefix {
+  containerPrefix: string;
+  hostRoot: string;
+}
+
+/**
+ * Build the list of (containerPath prefix → resolved host root) pairs that
+ * the agent in `sourceGroup` is allowed to send files *from*. Mirrors the
+ * mount layout in container-runner.buildVolumeMounts but only includes the
+ * mounts that make sense as user-facing file sources:
+ *
+ *   - `/workspace/group`     → the group's own folder under groups/
+ *   - `/workspace/extra/<X>` → each additional mount configured for the group
+ *
+ * Intentionally excludes `/workspace/project` (repo root), `/workspace/tools`
+ * (internal CLI helpers), `/workspace/ipc` (IPC plumbing), `/app/src`, and
+ * `/home/node/.claude` (session/auth state) — none of those are reasonable
+ * to attach to a WhatsApp chat.
+ */
+function getSendablePrefixes(
+  sourceGroup: string,
+  registeredGroups: Record<string, RegisteredGroup>,
+): SendablePrefix[] {
+  const prefixes: SendablePrefix[] = [
+    {
+      containerPrefix: '/workspace/group',
+      hostRoot: path.resolve(path.join(GROUPS_DIR, sourceGroup)),
+    },
+  ];
+
+  const group = Object.values(registeredGroups).find(
+    (g) => g.folder === sourceGroup,
+  );
+  for (const m of group?.containerConfig?.additionalMounts ?? []) {
+    const name = m.containerPath || path.basename(m.hostPath);
+    // ~ expansion (matches mount-security.validateMount). os.homedir would
+    // also work; using HOME keeps us consistent with the rest of the repo.
+    const home = process.env.HOME || '';
+    const expanded = m.hostPath.startsWith('~')
+      ? path.join(home, m.hostPath.slice(1).replace(/^\//, ''))
+      : m.hostPath;
+    prefixes.push({
+      containerPrefix: `/workspace/extra/${name}`,
+      hostRoot: path.resolve(expanded),
+    });
+  }
+  return prefixes;
+}
+
+/**
+ * Translate a container-side absolute path to a host-side absolute path,
+ * rejecting anything outside the allowed prefixes. Normalizes the input
+ * first so traversal segments (`..`, repeated slashes) can't sneak past
+ * the prefix check; then resolves and re-verifies the final path is still
+ * within the matched mount's host root as defense in depth.
+ */
+function translateContainerPath(
+  containerPath: string,
+  prefixes: SendablePrefix[],
+): { ok: true; hostPath: string } | { ok: false; reason: string } {
+  if (!path.posix.isAbsolute(containerPath)) {
+    return { ok: false, reason: `path is not absolute: ${containerPath}` };
+  }
+  const norm = path.posix.normalize(containerPath);
+  for (const p of prefixes) {
+    if (norm !== p.containerPrefix && !norm.startsWith(p.containerPrefix + '/')) {
+      continue;
+    }
+    const suffix = norm.slice(p.containerPrefix.length).replace(/^\//, '');
+    const candidate = path.resolve(p.hostRoot, suffix);
+    if (
+      candidate !== p.hostRoot &&
+      !candidate.startsWith(p.hostRoot + path.sep)
+    ) {
+      return { ok: false, reason: `resolved path escapes ${p.hostRoot}` };
+    }
+    return { ok: true, hostPath: candidate };
+  }
+  const allowed = prefixes.map((p) => p.containerPrefix).join(', ');
+  return {
+    ok: false,
+    reason: `not under any allowed prefix (${allowed}); copy the file into /workspace/group/ first`,
+  };
+}
 
 export function startIpcWatcher(deps: IpcDeps): void {
   if (ipcWatcherRunning) {
@@ -99,6 +186,57 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     { chatJid: data.chatJid, sourceGroup },
                     'Unauthorized IPC message attempt blocked',
                   );
+                }
+              } else if (data.type === 'send_file' && data.chatJid && data.filePath) {
+                // Authorization: verify this group can send to this chatJid
+                const targetGroup = registeredGroups[data.chatJid];
+                const authorised =
+                  isMain || (targetGroup && targetGroup.folder === sourceGroup);
+                if (!authorised) {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC file send attempt blocked',
+                  );
+                } else if (!deps.sendFile) {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'sendFile not supported by channel',
+                  );
+                  await deps.sendMessage(
+                    data.chatJid,
+                    `File send failed: channel does not support attachments.`,
+                  );
+                } else {
+                  const prefixes = getSendablePrefixes(sourceGroup, registeredGroups);
+                  const xlate = translateContainerPath(data.filePath, prefixes);
+                  if (!xlate.ok) {
+                    logger.warn(
+                      { chatJid: data.chatJid, sourceGroup, containerPath: data.filePath, reason: xlate.reason },
+                      'IPC file send blocked by path validation',
+                    );
+                    await deps.sendMessage(
+                      data.chatJid,
+                      `File send failed: ${xlate.reason}`,
+                    );
+                  } else {
+                    try {
+                      await deps.sendFile(data.chatJid, xlate.hostPath, data.caption);
+                      logger.info(
+                        { chatJid: data.chatJid, sourceGroup, file: path.basename(xlate.hostPath) },
+                        'IPC file sent',
+                      );
+                    } catch (sendErr) {
+                      const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
+                      logger.error(
+                        { chatJid: data.chatJid, sourceGroup, hostPath: xlate.hostPath, err: msg },
+                        'IPC file send failed at channel',
+                      );
+                      await deps.sendMessage(
+                        data.chatJid,
+                        `File send failed: ${msg}`,
+                      );
+                    }
+                  }
                 }
               }
               fs.unlinkSync(filePath);

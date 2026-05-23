@@ -883,6 +883,7 @@ async function main(): Promise<void> {
   });
   startIpcWatcher({
     sendMessage: (jid, text) => sendToChannel(jid, text),
+    sendFile: whatsapp.sendFile ? (jid, filePath, caption) => whatsapp.sendFile!(jid, filePath, caption) : undefined,
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroupMetadata: (force) => whatsapp.syncGroupMetadata(force),

@@ -74,6 +74,37 @@ server.tool(
 );
 
 server.tool(
+  'send_file',
+  "Send a file attachment to the user or group. Supports all file types (images, PDFs, documents, videos, etc.). The path must be under one of the allowed source mounts — /workspace/group/... (the group's own folder) or /workspace/extra/<name>/... (any configured additional mount). Paths elsewhere (/workspace/project, /workspace/tools, /workspace/ipc, etc.) are rejected by the host; copy the file into /workspace/group/ first if it lives outside the allowed mounts.",
+  {
+    file_path: z.string().describe('Absolute container path to the file (e.g., /workspace/group/myfile.pdf or /workspace/extra/Nano/report.xlsx)'),
+    caption: z.string().optional().describe('Optional caption/message to include with the file'),
+  },
+  async (args) => {
+    // Verify file exists before sending IPC
+    if (!fs.existsSync(args.file_path)) {
+      return {
+        content: [{ type: 'text' as const, text: `File not found: ${args.file_path}` }],
+        isError: true,
+      };
+    }
+
+    const data: Record<string, string | undefined> = {
+      type: 'send_file',
+      chatJid,
+      filePath: args.file_path,
+      caption: args.caption || undefined,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `File queued for sending: ${path.basename(args.file_path)}` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools.
 
