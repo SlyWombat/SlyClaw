@@ -89,7 +89,10 @@ const QR_PNG_FILE = path.join(STORE_DIR, 'qr.png');
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 const GROUP_METADATA_CACHE_TTL_MS = 60_000; // 1 min for outbound sends
 const SENT_MESSAGE_CACHE_MAX = 256;
-const RECONNECT_DELAY_MS = 5000;
+const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min
+// Exponential backoff for reconnect: 2s, 4s, 8s, 16s, 32s, 60s, 60s, ... forever.
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 60_000;
 
 const baileysLogger = pino({ level: 'silent' });
 
@@ -202,6 +205,13 @@ export class WhatsAppChannel implements Channel {
   // 60s group metadata cache for outbound sends
   private groupMetadataCache = new Map<string, CachedGroup>();
 
+  // Reconnect machinery — exponential backoff, infinite retries
+  private reconnectAttempts = 0;
+  private reconnectTimer?: NodeJS.Timeout;
+  private healthCheckTimer?: NodeJS.Timeout;
+  private healthCheckStarted = false;
+  private lastConnectedAt?: number;
+
   private opts: WhatsAppChannelOpts;
 
   constructor(opts: WhatsAppChannelOpts) {
@@ -221,12 +231,87 @@ export class WhatsAppChannel implements Channel {
   async disconnect(): Promise<void> {
     this.shuttingDown = true;
     this.connected = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
     try {
       this.sock?.end(undefined);
     } catch {
       /* ignore */
     }
     logger.info('WhatsApp adapter shut down');
+  }
+
+  /**
+   * Schedule a reconnect with exponential backoff. Replaces the previous
+   * "2 attempts then silently die" pattern with infinite retries capped
+   * at 60s between attempts — survives extended network outages, WSL2
+   * sleep/resume, WhatsApp server-side rotations.
+   *
+   * Sequence: 2s, 4s, 8s, 16s, 32s, 60s, 60s, ... until success or
+   * shutdown. Counter resets on successful `connection: open`.
+   */
+  private scheduleReconnect(): void {
+    if (this.shuttingDown) return;
+    if (this.reconnectTimer) {
+      // A reconnect is already scheduled; don't pile on.
+      return;
+    }
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts),
+      RECONNECT_MAX_DELAY_MS,
+    );
+    this.reconnectAttempts++;
+    logger.info(
+      { attempt: this.reconnectAttempts, delayMs: delay },
+      'Scheduling WhatsApp reconnect',
+    );
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      this.connectInternal().catch((err) => {
+        logger.error({ err, attempt: this.reconnectAttempts }, 'Reconnect attempt failed, will retry');
+        this.scheduleReconnect();
+      });
+    }, delay);
+  }
+
+  /**
+   * Periodic health check — runs every 5 min once we've ever connected.
+   * If we've been disconnected for >5 min with no reconnect already
+   * scheduled (i.e., something fell through the cracks), force one.
+   * Belt-and-suspenders for the rare case where Baileys' WS dies
+   * silently without firing connection.close.
+   */
+  private startHealthCheck(): void {
+    if (this.healthCheckStarted) return;
+    this.healthCheckStarted = true;
+    this.healthCheckTimer = setInterval(() => {
+      if (this.shuttingDown) return;
+      const sinceConnected = this.lastConnectedAt
+        ? Date.now() - this.lastConnectedAt
+        : Infinity;
+      logger.debug(
+        {
+          connected: this.connected,
+          sinceLastConnectMs: sinceConnected,
+          reconnectScheduled: !!this.reconnectTimer,
+          reconnectAttempts: this.reconnectAttempts,
+        },
+        'WhatsApp health check',
+      );
+      if (!this.connected && !this.reconnectTimer && sinceConnected > HEALTH_CHECK_INTERVAL_MS) {
+        logger.warn(
+          { sinceLastConnectMs: sinceConnected },
+          'Health check: disconnected with no reconnect scheduled — forcing one',
+        );
+        this.scheduleReconnect();
+      }
+    }, HEALTH_CHECK_INTERVAL_MS);
   }
 
   isConnected(): boolean {
@@ -414,32 +499,31 @@ export class WhatsAppChannel implements Channel {
         this.connected = false;
         const reason = (lastDisconnect?.error as { output?: { statusCode?: number } })
           ?.output?.statusCode;
-        // Don't auto-reconnect during shutdown — a parallel
-        // useMultiFileAuthState() init truncates creds.json mid-write on
-        // process exit, leaving a 0-byte creds file and forcing a fresh QR.
-        const shouldReconnect = !this.shuttingDown && reason !== DisconnectReason.loggedOut;
+        // Three terminal states for a connection.close:
+        //   1. Actual logout (reason === loggedOut)  → nuke auth, exit
+        //   2. We're shutting down                   → preserve auth, exit
+        //   3. Anything else (timeout, network, ...) → reconnect
+        // Distinguishing #1 from #2 is critical: if shutdown is treated
+        // as logout we wipe creds.json on every systemctl restart and the
+        // user has to re-pair every time. The original guard was correct
+        // about NOT reconnecting during shutdown, but the else branch
+        // overzealously nuked creds for both #1 and #2.
+        const isLoggedOut = reason === DisconnectReason.loggedOut;
+        const shouldReconnect = !this.shuttingDown && !isLoggedOut;
 
         logger.info(
-          { reason, shouldReconnect, shuttingDown: this.shuttingDown },
+          { reason, isLoggedOut, shouldReconnect, shuttingDown: this.shuttingDown },
           'WhatsApp connection closed',
         );
 
         if (shouldReconnect) {
-          logger.info('Reconnecting...');
-          this.connectInternal().catch((err) => {
-            logger.error({ err }, 'Failed to reconnect, retrying in 5s');
-            setTimeout(() => {
-              this.connectInternal().catch((err2) =>
-                logger.error({ err: err2 }, 'Reconnection retry failed'),
-              );
-            }, RECONNECT_DELAY_MS);
-          });
-        } else {
+          this.scheduleReconnect();
+        } else if (isLoggedOut) {
+          // Genuine logout — phone removed this device or WA force-logged
+          // us out. Nuke creds: keeping invalidated ones causes a second
+          // 401 on next start that triggers WhatsApp's re-link cooldown
+          // ("can't link new devices now").
           logger.info('WhatsApp logged out');
-          // Clear stale credentials immediately. Keeping them around
-          // causes the next service start to attempt auth with an
-          // invalidated session — a second 401 triggers WhatsApp's
-          // re-link cooldown ("can't link new devices now").
           try {
             fs.rmSync(AUTH_DIR, { recursive: true, force: true });
             fs.mkdirSync(AUTH_DIR, { recursive: true });
@@ -452,9 +536,21 @@ export class WhatsAppChannel implements Channel {
             this.firstOpenResolve = undefined;
             this.firstOpenReject = undefined;
           }
+        } else {
+          // Graceful shutdown (this.shuttingDown=true) — auth is fine,
+          // just exit. Next start resumes from creds.json without QR.
+          logger.info('WhatsApp connection closed for shutdown — creds preserved');
         }
       } else if (connection === 'open') {
         this.connected = true;
+        this.lastConnectedAt = Date.now();
+        // Reset backoff and cancel any scheduled reconnect — we're back.
+        this.reconnectAttempts = 0;
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = undefined;
+        }
+        this.startHealthCheck();
         logger.info('Connected to WhatsApp');
 
         // Clean up pairing-code file after successful pair
@@ -507,7 +603,14 @@ export class WhatsAppChannel implements Channel {
       }
     });
 
-    this.sock.ev.on('creds.update', saveCreds);
+    this.sock.ev.on('creds.update', async () => {
+      try {
+        await saveCreds();
+        logger.debug('Baileys credentials persisted');
+      } catch (err) {
+        logger.error({ err }, 'Failed to persist Baileys credentials');
+      }
+    });
 
     // LID ↔ phone mapping updates — Baileys v7 emits these continuously as
     // it learns mappings for participants we see across chats.
@@ -519,7 +622,11 @@ export class WhatsAppChannel implements Channel {
       }
     });
 
-    this.sock.ev.on('messages.upsert', async ({ messages }) => {
+    this.sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      logger.info(
+        { type, count: messages.length, firstKey: messages[0]?.key },
+        'messages.upsert received',
+      );
       for (const msg of messages) {
         try {
           await this.handleIncomingMessage(msg);
@@ -531,12 +638,24 @@ export class WhatsAppChannel implements Channel {
   }
 
   private async handleIncomingMessage(msg: WAMessage): Promise<void> {
-    if (!msg.message) return;
+    if (!msg.message) {
+      logger.debug({ msgId: msg.key.id }, 'Inbound msg dropped: !msg.message');
+      return;
+    }
     const normalized = normalizeMessageContent(msg.message);
-    if (!normalized) return;
+    if (!normalized) {
+      logger.debug(
+        { msgId: msg.key.id, keys: Object.keys(msg.message) },
+        'Inbound msg dropped: normalizeMessageContent returned null',
+      );
+      return;
+    }
 
     const rawJid = msg.key.remoteJid;
-    if (!rawJid || rawJid === 'status@broadcast') return;
+    if (!rawJid || rawJid === 'status@broadcast') {
+      logger.debug({ msgId: msg.key.id, rawJid }, 'Inbound msg dropped: no/status JID');
+      return;
+    }
 
     // Translate LID → phone JID via v7's alt JID
     const chatJid = await this.translateJid(rawJid, msg.key.remoteJidAlt);
