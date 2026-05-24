@@ -53,15 +53,25 @@ function checkEcowitt(): CheckResult {
 }
 
 function checkTunnel(): CheckResult {
-  try {
-    const status = execSync('systemctl --user is-active slyclaw-tunnel', {
-      stdio: 'pipe',
-      encoding: 'utf-8',
-    }).trim();
-    return { name: 'Alexa Integration', ok: status === 'active' };
-  } catch {
-    return { name: 'Alexa Integration', ok: false, detail: 'not running' };
+  // Try both user-level (the WSL/dev host pattern) and system-level (the
+  // M5/server pattern) — slyclaw-tunnel.service can be installed in either
+  // depending on whether slyclaw is running as the user's local agent or
+  // as a daemon on a dedicated box.
+  const probes = [
+    'systemctl is-active slyclaw-tunnel',
+    'systemctl --user is-active slyclaw-tunnel',
+  ];
+  for (const cmd of probes) {
+    try {
+      const status = execSync(cmd, { stdio: 'pipe', encoding: 'utf-8' }).trim();
+      if (status === 'active') {
+        return { name: 'Alexa Integration', ok: true };
+      }
+    } catch {
+      // is-active exits non-zero for inactive/missing — try the next scope
+    }
   }
+  return { name: 'Alexa Integration', ok: false, detail: 'not running' };
 }
 
 function checkDocker(): CheckResult {
