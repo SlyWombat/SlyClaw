@@ -38,8 +38,12 @@ import {
   setGroupLlm,
 } from './llm.js';
 import { DelegateToClaudeError } from './ollama-tools.js';
-import { AlexaChannel, ALEXA_JID } from './channels/alexa.js';
-import { WhatsAppChannel } from './channels/whatsapp.js';
+// Channel barrel imports first — guarantees registration order matches
+// what `src/channels/index.ts` declares (whatsapp before alexa). Importing
+// alexa.ts directly here would load alexa BEFORE whatsapp and put Alexa
+// at the head of the registry's iteration, which is the wrong connect order
+// (Alexa starting its Express server while WA is still in QR/pair handshake).
+import { ALEXA_JID, createAllChannels } from './channels/index.js';
 import {
   ContainerOutput,
   runContainerAgent,
@@ -105,7 +109,7 @@ const CAPABILITY_DENIAL_RE =
 const ESCALATE_TO_CLAUDE_RE =
   /\b(email|inbox|send.{0,10}(email|message)|read.{0,10}(email|mail|inbox)|check.{0,10}(email|mail|inbox)|calendar|my files?|read.{0,10}file|write.{0,10}file|open.{0,10}file)\b/i;
 
-let whatsapp: WhatsAppChannel;
+let whatsapp: Channel | undefined;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
 
@@ -845,26 +849,24 @@ async function main(): Promise<void> {
     storeMessage(msg);
   };
 
-  // Create WhatsApp channel
-  whatsapp = new WhatsAppChannel({
+  // Instantiate every registered channel adapter. Order = registration
+  // order in `src/channels/index.ts` (WhatsApp first, then Alexa). The
+  // factories return null for channels whose env vars aren't set (e.g.
+  // Alexa when ALEXA_PORT is unset), so iteration cleanly skips them.
+  const allChannels = createAllChannels({
     onMessage: handleInbound,
-    onChatMetadata: (chatJid, timestamp) => storeChatMetadata(chatJid, timestamp),
+    onChatMetadata: (chatJid, timestamp, name) =>
+      storeChatMetadata(chatJid, timestamp, name),
     registeredGroups: () => registeredGroups,
   });
-  channels.push(whatsapp);
-
-  // Connect WhatsApp — resolves when first connected
-  await whatsapp.connect();
-
-  // Connect Alexa channel if port is configured
-  if (ALEXA_PORT) {
-    const alexa = new AlexaChannel({
-      onMessage: handleInbound,
-      onChatMetadata: (chatJid, timestamp, name) => storeChatMetadata(chatJid, timestamp, name),
-    });
-    channels.push(alexa);
-    await alexa.connect();
+  channels.push(...allChannels);
+  // Connect serially in registration order so WhatsApp's QR/pair handshake
+  // (which can block on first run) completes before lightweight channels
+  // (Alexa Express server) come up.
+  for (const ch of allChannels) {
+    await ch.connect();
   }
+  whatsapp = allChannels.find((c) => c.name === 'whatsapp');
 
   // Start Ecowitt weather background refresh (and local push receiver if configured)
   if (ECOWITT_APP_KEY || ECOWITT_LOCAL_PORT) {
@@ -884,12 +886,17 @@ async function main(): Promise<void> {
       if (text) await sendToChannel(jid, text);
     },
   });
+  // Capture for the closures below so TS knows whatsapp isn't undefined
+  // inside them (it was assigned above from the registry).
+  const wa = whatsapp;
   startIpcWatcher({
     sendMessage: (jid, text) => sendToChannel(jid, text),
-    sendFile: whatsapp.sendFile ? (jid, filePath, caption) => whatsapp.sendFile!(jid, filePath, caption) : undefined,
+    sendFile: wa?.sendFile ? (jid, filePath, caption) => wa.sendFile!(jid, filePath, caption) : undefined,
+    openDM: wa?.openDM ? (handle) => wa.openDM!(handle) : undefined,
+    askQuestion: wa?.askQuestion ? (jid, payload) => wa.askQuestion!(jid, payload) : undefined,
     registeredGroups: () => registeredGroups,
     registerGroup,
-    syncGroupMetadata: (force) => whatsapp.syncGroupMetadata(force),
+    syncGroupMetadata: (force) => wa?.syncGroupMetadata?.(force) ?? Promise.resolve(),
     getAvailableGroups,
     writeGroupsSnapshot: (gf, im, ag, rj) => writeGroupsSnapshot(gf, im, ag, rj),
   });

@@ -253,3 +253,16 @@ export class AlexaChannel implements Channel {
     }
   }
 }
+
+// --- Self-register with the channel adapter registry ---
+// Returns null (channel-skipped) when ALEXA_PORT isn't configured so the
+// host doesn't try to start an Express server for no reason. ALEXA_PORT
+// is already imported at the top of this file.
+import { registerChannel } from './channel-registry.js';
+registerChannel('alexa', (opts) => {
+  if (!ALEXA_PORT) return null;
+  return new AlexaChannel({
+    onMessage: opts.onMessage,
+    onChatMetadata: opts.onChatMetadata,
+  });
+});

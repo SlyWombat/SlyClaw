@@ -65,6 +65,9 @@ export interface NewMessage {
   imageAttachment?: { base64: string; mimeType: string };
   // Optional file attachment (PDFs, documents, etc.) — channel sets this; index.ts saves to disk and rewrites content
   fileAttachment?: { base64: string; mimeType: string; filename?: string };
+  // Optional list of mentioned JIDs (WhatsApp `@<digits>` mentions resolved by the channel adapter).
+  // Phone-format JIDs (`<digits>@s.whatsapp.net`). Empty/absent when no mentions in the message.
+  mentioned?: string[];
 }
 
 export interface ScheduledTask {
@@ -104,6 +107,34 @@ export interface Channel {
   setTyping?(jid: string, isTyping: boolean): Promise<void>;
   // Optional: file sending. Channels that support it implement it.
   sendFile?(jid: string, filePath: string, caption?: string): Promise<void>;
+  /**
+   * Optional: open (or fetch the JID of) a DM with a user. Called by the
+   * host when an agent wants to initiate a cold message to a user who may
+   * not have an existing chat with the bot — host-initiated alerts,
+   * approval prompts, scheduled notifications.
+   *
+   * For WhatsApp / Telegram / iMessage, the user handle IS already the DM
+   * JID (just normalize), so the implementation is essentially a parse.
+   * For Discord / Slack, it'd open a real DM channel via the platform API.
+   */
+  openDM?(userHandle: string): Promise<string>;
+  /**
+   * Optional: render an `ask_user_question` interactive prompt — multiple
+   * choice with channel-native UI. WhatsApp renders as a numbered list of
+   * slash commands; Discord/Slack would use native button rows. The
+   * channel also tracks a pending entry so the next inbound message in
+   * that chat can be translated from a slash-command response back to
+   * the human-readable option label before reaching the router.
+   */
+  askQuestion?(jid: string, payload: import('./ask-question.js').AskQuestionPayload): Promise<void>;
+  /**
+   * Optional: refresh the channel's cached conversation/group metadata.
+   * For WhatsApp this fetches `groupFetchAllParticipating` and updates
+   * chat names in the DB; for other channels it might paginate the
+   * conversation list. `force=true` bypasses any time-since-last-sync
+   * gate the channel uses.
+   */
+  syncGroupMetadata?(force?: boolean): Promise<void>;
 }
 
 // Callback type that channels use to deliver inbound messages

@@ -71,6 +71,7 @@ import type {
 } from '@whiskeysockets/baileys';
 
 import { isSafeAttachmentName } from '../attachment-safety.js';
+import { AskQuestionPayload, NormalizedOption, optionToCommand } from '../ask-question.js';
 import { ASSISTANT_HAS_OWN_NUMBER, ASSISTANT_NAME, STORE_DIR } from '../config.js';
 import { readEnvFile } from '../env.js';
 import {
@@ -93,6 +94,13 @@ const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min
 // Exponential backoff for reconnect: 2s, 4s, 8s, 16s, 32s, 60s, 60s, ... forever.
 const RECONNECT_BASE_DELAY_MS = 2000;
 const RECONNECT_MAX_DELAY_MS = 60_000;
+// LRU cap for pending ask_question entries. One pending question per chat;
+// this caps the total Map size to prevent unbounded growth if many chats
+// receive questions that are never answered.
+const PENDING_QUESTIONS_MAX = 64;
+// Pending questions expire after this long if unanswered — keeps stale
+// "use /option-x" prompts from translating user messages weeks later.
+const PENDING_QUESTION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 const baileysLogger = pino({ level: 'silent' });
 
@@ -164,6 +172,99 @@ function buildMediaMessage(data: Buffer, filename: string, ext: string, caption?
   return { document: data, fileName: filename, caption, mimetype: 'application/octet-stream' };
 }
 
+// --- Markdown → WhatsApp formatting + mention extraction ---
+//
+// Ported from upstream nanoclaw's whatsapp.ts. Two related concerns:
+//
+// 1. Markdown that Claude/Gemini produce (`**bold**`, `_italic_`, `## H`,
+//    `[link](url)`, etc.) needs converting to WhatsApp's native syntax
+//    (`*bold*`, `_italic_`, no headings, bare-text links). Code blocks
+//    must pass through untouched so phone-like sequences inside `code`
+//    don't get treated as mentions.
+//
+// 2. `@<digits>` mention tags in text need to be paired with a
+//    `mentions: [jid, …]` field in the Baileys send payload so the
+//    recipient actually gets buzzed. Without that field WhatsApp renders
+//    `@123456789` as literal text — no notification, no clickable tag.
+
+interface TextSegment {
+  content: string;
+  isProtected: boolean;
+}
+
+/** Split text into code-block-protected and unprotected regions. */
+function splitProtectedRegions(text: string): TextSegment[] {
+  const segments: TextSegment[] = [];
+  const codeBlockRegex = /```[\s\S]*?```|`[^`\n]+`/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ content: text.slice(lastIndex, match.index), isProtected: false });
+    }
+    segments.push({ content: match[0], isProtected: true });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ content: text.slice(lastIndex), isProtected: false });
+  }
+
+  return segments;
+}
+
+/** Apply WhatsApp-native formatting to an unprotected text segment. */
+function transformForWhatsApp(text: string): string {
+  // Order matters: italic before bold to avoid **bold** → *bold* → _bold_
+  // 1. Italic: *text* (not **) → _text_
+  text = text.replace(/(?<!\*)\*(?=[^\s*])([^*\n]+?)(?<=[^\s*])\*(?!\*)/g, '_$1_');
+  // 2. Bold: **text** → *text*
+  text = text.replace(/\*\*(?=[^\s*])([^*]+?)(?<=[^\s*])\*\*/g, '*$1*');
+  // 3. Headings: ## Title → *Title*
+  text = text.replace(/^#{1,6}\s+(.+)$/gm, '*$1*');
+  // 4. Links: [text](url) → text (url)
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
+  // 5. Horizontal rules: --- / *** / ___ → stripped
+  text = text.replace(/^(-{3,}|\*{3,}|_{3,})$/gm, '');
+  return text;
+}
+
+// WhatsApp tags `@<phone-digits>` (5–15 digit local part — covers short
+// test numbers up to ITU E.164 max). A leading `+` is accepted but stripped
+// so the literal in text matches the digits in the JID.
+const MENTION_RE = /(^|[^\w@+])@\+?(\d{5,15})(?!\d)/g;
+
+/** Extract `@<digits>` mentions from text and normalize them. */
+export function parseWhatsAppMentions(text: string): { text: string; mentions: string[] } {
+  const mentions = new Set<string>();
+  const out = text.replace(MENTION_RE, (_full, lead: string, digits: string) => {
+    mentions.add(`${digits}@s.whatsapp.net`);
+    return `${lead}@${digits}`;
+  });
+  return { text: out, mentions: [...mentions] };
+}
+
+/**
+ * Convert markdown to WhatsApp-native formatting and extract any
+ * `@<phone>` mentions. Code-block regions pass through untouched so
+ * phone-like sequences inside code aren't tagged.
+ */
+function formatWhatsApp(text: string): { text: string; mentions: string[] } {
+  const segments = splitProtectedRegions(text);
+  const mentions = new Set<string>();
+  const out = segments
+    .map(({ content, isProtected }) => {
+      if (isProtected) return content;
+      const transformed = transformForWhatsApp(content);
+      const { text: withMentions, mentions: found } = parseWhatsAppMentions(transformed);
+      for (const m of found) mentions.add(m);
+      return withMentions;
+    })
+    .join('');
+  return { text: out, mentions: [...mentions] };
+}
+
 // --- Channel ---
 
 export interface WhatsAppChannelOpts {
@@ -174,11 +275,17 @@ export interface WhatsAppChannelOpts {
 
 interface OutgoingItem {
   jid: string;
-  payload: { text?: string; mediaPath?: string; caption?: string };
+  payload: { text?: string; mediaPath?: string; caption?: string; mentions?: string[] };
 }
 
 interface CachedGroup {
   metadata: GroupMetadata;
+  expiresAt: number;
+}
+
+interface PendingQuestion {
+  questionId: string;
+  options: NormalizedOption[];
   expiresAt: number;
 }
 
@@ -204,6 +311,11 @@ export class WhatsAppChannel implements Channel {
 
   // 60s group metadata cache for outbound sends
   private groupMetadataCache = new Map<string, CachedGroup>();
+
+  // Pending ask_user_question entries — keyed by chatJid. Inbound messages
+  // matching `/<option-slug>` get translated to the option's selectedLabel
+  // and the entry is consumed.
+  private pendingQuestions = new Map<string, PendingQuestion>();
 
   // Reconnect machinery — exponential backoff, infinite retries
   private reconnectAttempts = 0;
@@ -322,22 +434,45 @@ export class WhatsAppChannel implements Channel {
     return jid.endsWith('@s.whatsapp.net') || jid.endsWith('@g.us');
   }
 
+  async openDM(userHandle: string): Promise<string> {
+    // WhatsApp uses the phone number itself as the DM JID — no separate
+    // "open" handshake needed. Accept "+1 (416) 555-1234", "14165551234",
+    // or even "1234567890@s.whatsapp.net" and normalize to the JID form.
+    if (userHandle.endsWith('@s.whatsapp.net')) return userHandle;
+    if (userHandle.endsWith('@g.us')) {
+      throw new Error(`openDM called with a group JID: ${userHandle}`);
+    }
+    const digits = userHandle.replace(/\D/g, '');
+    if (digits.length < 5 || digits.length > 15) {
+      throw new Error(
+        `Invalid phone number for openDM: "${userHandle}" → "${digits}" (need 5-15 digits incl. country code)`,
+      );
+    }
+    return `${digits}@s.whatsapp.net`;
+  }
+
   async sendMessage(jid: string, text: string): Promise<void> {
-    const prefixed = ASSISTANT_HAS_OWN_NUMBER ? text : `${ASSISTANT_NAME}: ${text}`;
+    // Transform Claude/Gemini markdown → WA-native + extract @<digits> mentions.
+    // Format the user-supplied body BEFORE prepending the ASSISTANT_NAME prefix
+    // so the prefix (which contains a colon, not markdown) isn't mangled.
+    const { text: formatted, mentions } = formatWhatsApp(text);
+    const prefixed = ASSISTANT_HAS_OWN_NUMBER ? formatted : `${ASSISTANT_NAME}: ${formatted}`;
     if (!this.connected) {
-      this.outgoingQueue.push({ jid, payload: { text: prefixed } });
+      this.outgoingQueue.push({ jid, payload: { text: prefixed, mentions } });
       logger.info(
-        { jid, length: prefixed.length, queueSize: this.outgoingQueue.length },
+        { jid, length: prefixed.length, mentions: mentions.length, queueSize: this.outgoingQueue.length },
         'WA disconnected, message queued',
       );
       return;
     }
     try {
-      const sent = await this.sock.sendMessage(jid, { text: prefixed });
+      const payload: { text: string; mentions?: string[] } = { text: prefixed };
+      if (mentions.length > 0) payload.mentions = mentions;
+      const sent = await this.sock.sendMessage(jid, payload);
       this.recordSent(sent?.key?.id);
-      logger.info({ jid, length: prefixed.length }, 'Message sent');
+      logger.info({ jid, length: prefixed.length, mentions: mentions.length }, 'Message sent');
     } catch (err) {
-      this.outgoingQueue.push({ jid, payload: { text: prefixed } });
+      this.outgoingQueue.push({ jid, payload: { text: prefixed, mentions } });
       logger.warn(
         { jid, err, queueSize: this.outgoingQueue.length },
         'Failed to send, message queued',
@@ -346,18 +481,23 @@ export class WhatsAppChannel implements Channel {
   }
 
   async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
-    // Match sendMessage's labelling: when the assistant doesn't own its own
-    // WA number, every outbound message gets a `${ASSISTANT_NAME}:` prefix
-    // so recipients can tell who sent it and so the inbound bot-detection
-    // matches echoed-back media (caption is the `content` field for media).
+    // Format the caption (markdown → WA, extract mentions) before prepending
+    // the labelling prefix. Same ordering rationale as sendMessage.
+    const { text: formattedCaption, mentions } = caption
+      ? formatWhatsApp(caption)
+      : { text: '', mentions: [] as string[] };
+
     const prefixedCaption = ASSISTANT_HAS_OWN_NUMBER
-      ? caption
-      : caption
-        ? `${ASSISTANT_NAME}: ${caption}`
+      ? formattedCaption || undefined
+      : formattedCaption
+        ? `${ASSISTANT_NAME}: ${formattedCaption}`
         : `${ASSISTANT_NAME}:`;
 
     if (!this.connected) {
-      this.outgoingQueue.push({ jid, payload: { mediaPath: filePath, caption: prefixedCaption } });
+      this.outgoingQueue.push({
+        jid,
+        payload: { mediaPath: filePath, caption: prefixedCaption, mentions },
+      });
       logger.info({ jid, filePath, queueSize: this.outgoingQueue.length }, 'WA disconnected, file queued');
       return;
     }
@@ -366,12 +506,37 @@ export class WhatsAppChannel implements Channel {
       const filename = path.basename(filePath);
       const ext = path.extname(filePath).toLowerCase();
       const payload = buildMediaMessage(data, filename, ext, prefixedCaption);
+      if (mentions.length > 0) payload.mentions = mentions;
       const sent = await this.sock.sendMessage(jid, payload);
       this.recordSent(sent?.key?.id);
-      logger.info({ jid, filePath, hasCaption: !!caption }, 'File sent');
+      logger.info({ jid, filePath, hasCaption: !!caption, mentions: mentions.length }, 'File sent');
     } catch (err) {
       logger.error({ err, jid, filePath }, 'Failed to send file');
       throw err;
+    }
+  }
+
+  async askQuestion(jid: string, payload: AskQuestionPayload): Promise<void> {
+    if (!payload.title || !payload.options || payload.options.length === 0) {
+      throw new Error('askQuestion: title and at least one option are required');
+    }
+    const optionLines = payload.options
+      .map((o) => `  ${optionToCommand(o.label)}`)
+      .join('\n');
+    const body = `*${payload.title}*\n\n${payload.question}\n\nReply with:\n${optionLines}`;
+    // sendMessage applies markdown→WA formatting + prefix.
+    await this.sendMessage(jid, body);
+
+    // Record the pending entry so we can translate the user's slash-command
+    // answer back to the option's selectedLabel before the router sees it.
+    this.pendingQuestions.set(jid, {
+      questionId: payload.questionId,
+      options: payload.options,
+      expiresAt: Date.now() + PENDING_QUESTION_TTL_MS,
+    });
+    if (this.pendingQuestions.size > PENDING_QUESTIONS_MAX) {
+      const oldest = this.pendingQuestions.keys().next().value;
+      if (oldest) this.pendingQuestions.delete(oldest);
     }
   }
 
@@ -683,6 +848,30 @@ export class WhatsAppChannel implements Channel {
       content = content.replace(`@${this.botLidUser}`, `@${ASSISTANT_NAME}`);
     }
 
+    // If this chat has a pending ask_user_question, see if the user's
+    // reply is a slash-command matching one of the options. Translate
+    // `/send-anyway` → "You selected: Send anyway (questionId=q_42)" so
+    // the agent's next invocation sees a natural-language answer.
+    const pending = this.pendingQuestions.get(chatJid);
+    if (pending) {
+      if (pending.expiresAt < Date.now()) {
+        this.pendingQuestions.delete(chatJid);
+      } else {
+        const trimmed = content.trim().toLowerCase();
+        const matched = pending.options.find(
+          (o) => optionToCommand(o.label).toLowerCase() === trimmed,
+        );
+        if (matched) {
+          this.pendingQuestions.delete(chatJid);
+          content = `You selected: ${matched.selectedLabel} (questionId=${pending.questionId})`;
+          logger.info(
+            { chatJid, questionId: pending.questionId, choice: matched.value },
+            'Translated ask_question answer',
+          );
+        }
+      }
+    }
+
     // Download any attached media
     const attachment = await this.downloadInboundMedia(msg, normalized);
 
@@ -739,6 +928,18 @@ export class WhatsAppChannel implements Channel {
       ? false
       : content.startsWith(`${ASSISTANT_NAME}:`);
 
+    // Extract inbound mentions — JIDs the sender tagged in this message.
+    // Useful so the agent can know "user @123 was mentioned" without parsing
+    // text. Sourced from WhatsApp's own contextInfo.mentionedJid (platform-
+    // confirmed, not regex-guessed).
+    const mentioned: string[] = (
+      normalized.extendedTextMessage?.contextInfo?.mentionedJid ??
+      normalized.imageMessage?.contextInfo?.mentionedJid ??
+      normalized.videoMessage?.contextInfo?.mentionedJid ??
+      normalized.documentMessage?.contextInfo?.mentionedJid ??
+      []
+    ).filter((j): j is string => typeof j === 'string');
+
     const newMessage: NewMessage = {
       id: msg.key.id || `${tsSec}-${Math.random().toString(36).slice(2, 8)}`,
       chat_jid: chatJid,
@@ -749,6 +950,7 @@ export class WhatsAppChannel implements Channel {
       is_from_me: fromMe,
       is_bot_message: isBotMessage,
     };
+    if (mentioned.length > 0) newMessage.mentioned = mentioned;
     if (attachment) {
       if (attachment.kind === 'image') {
         newMessage.imageAttachment = {
@@ -894,17 +1096,21 @@ export class WhatsAppChannel implements Channel {
     try {
       while (this.outgoingQueue.length > 0 && this.connected) {
         const item = this.outgoingQueue.shift()!;
+        const mentions = item.payload.mentions;
         try {
           if (item.payload.mediaPath) {
             const data = fs.readFileSync(item.payload.mediaPath);
             const filename = path.basename(item.payload.mediaPath);
             const ext = path.extname(item.payload.mediaPath).toLowerCase();
             const payload = buildMediaMessage(data, filename, ext, item.payload.caption);
+            if (mentions && mentions.length > 0) payload.mentions = mentions;
             const sent = await this.sock.sendMessage(item.jid, payload);
             this.recordSent(sent?.key?.id);
             logger.info({ jid: item.jid, filePath: item.payload.mediaPath }, 'Queued file sent');
           } else if (item.payload.text) {
-            const sent = await this.sock.sendMessage(item.jid, { text: item.payload.text });
+            const textPayload: { text: string; mentions?: string[] } = { text: item.payload.text };
+            if (mentions && mentions.length > 0) textPayload.mentions = mentions;
+            const sent = await this.sock.sendMessage(item.jid, textPayload);
             this.recordSent(sent?.key?.id);
             logger.info({ jid: item.jid, length: item.payload.text.length }, 'Queued message sent');
           }
@@ -920,3 +1126,9 @@ export class WhatsAppChannel implements Channel {
     }
   }
 }
+
+// --- Self-register with the channel adapter registry ---
+// Imported by src/channels/index.ts at app startup; this side-effect runs
+// once and wires the WhatsApp channel into createAllChannels().
+import { registerChannel } from './channel-registry.js';
+registerChannel('whatsapp', (opts) => new WhatsAppChannel(opts));

@@ -14,6 +14,7 @@ import path from 'path';
 
 import { CronExpressionParser } from 'cron-parser';
 
+import { AskQuestionPayload, normalizeOptions } from './ask-question.js';
 import {
   DATA_DIR,
   GROUPS_DIR,
@@ -29,6 +30,8 @@ import { RegisteredGroup } from './types.js';
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
   sendFile?: (jid: string, filePath: string, caption?: string) => Promise<void>;
+  openDM?: (userHandle: string) => Promise<string>;
+  askQuestion?: (jid: string, payload: AskQuestionPayload) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroupMetadata: (force: boolean) => Promise<void>;
@@ -236,6 +239,77 @@ export function startIpcWatcher(deps: IpcDeps): void {
                         `File send failed: ${msg}`,
                       );
                     }
+                  }
+                }
+              } else if (data.type === 'ask_question' && data.chatJid && data.questionId && data.title && Array.isArray(data.options)) {
+                // Authorization mirrors send_message: main can ask anywhere,
+                // others only in their own group's chats.
+                const targetGroup = registeredGroups[data.chatJid];
+                const authorised =
+                  isMain || (targetGroup && targetGroup.folder === sourceGroup);
+                if (!authorised) {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC ask_question blocked',
+                  );
+                } else if (!deps.askQuestion) {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'askQuestion not supported by channel — falling back to plain text',
+                  );
+                  // Fallback: render manually if the channel can't do native questions.
+                  const lines = (data.options as Array<{ label?: string } | string>)
+                    .map((o, i) => `  ${i + 1}. ${typeof o === 'string' ? o : (o.label ?? String(o))}`)
+                    .join('\n');
+                  await deps.sendMessage(
+                    data.chatJid,
+                    `*${data.title}*\n\n${data.question ?? ''}\n\n${lines}`,
+                  );
+                } else {
+                  try {
+                    await deps.askQuestion(data.chatJid, {
+                      type: 'ask_question',
+                      questionId: data.questionId,
+                      title: data.title,
+                      question: data.question ?? '',
+                      options: normalizeOptions(data.options),
+                    });
+                    logger.info(
+                      { chatJid: data.chatJid, sourceGroup, questionId: data.questionId },
+                      'IPC ask_question sent',
+                    );
+                  } catch (err) {
+                    logger.error(
+                      { chatJid: data.chatJid, sourceGroup, err: err instanceof Error ? err.message : String(err) },
+                      'IPC ask_question failed',
+                    );
+                  }
+                }
+              } else if (data.type === 'send_dm' && data.phone && data.text) {
+                // Cold DM initiated by the agent. Only the main group
+                // (trusted operator) is allowed to message arbitrary phone
+                // numbers; non-main groups can only reply within their
+                // own existing chats via type='message'.
+                if (!isMain) {
+                  logger.warn(
+                    { phone: data.phone, sourceGroup },
+                    'Unauthorized IPC send_dm — only main group may initiate cold DMs',
+                  );
+                } else if (!deps.openDM) {
+                  logger.warn('send_dm called but no channel supports openDM');
+                } else {
+                  try {
+                    const jid = await deps.openDM(data.phone);
+                    await deps.sendMessage(jid, data.text);
+                    logger.info(
+                      { phone: data.phone, jid, sourceGroup },
+                      'IPC DM sent',
+                    );
+                  } catch (err) {
+                    logger.error(
+                      { phone: data.phone, sourceGroup, err: err instanceof Error ? err.message : String(err) },
+                      'IPC send_dm failed',
+                    );
                   }
                 }
               }

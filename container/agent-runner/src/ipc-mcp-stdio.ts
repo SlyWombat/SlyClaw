@@ -105,6 +105,58 @@ server.tool(
 );
 
 server.tool(
+  'ask_user_question',
+  "Render an interactive multiple-choice question in the current chat and resume your task after the user picks. The chat shows the question with each option as a slash command (e.g. /yes, /no, /maybe). When the user types one, the next inbound message you receive will be \"You selected: <option label> (questionId=...)\". Use for: confirmations before destructive actions, ambiguity resolution (\"which Sarah?\"), or any branching decision you'd rather have the human make.",
+  {
+    questionId: z.string().describe('A short id you generate to correlate the answer when it comes back (e.g. "send_email_q1"). Echoed in the user-selected message.'),
+    title: z.string().describe('Short title, rendered in bold (e.g. "Send this email?")'),
+    question: z.string().optional().describe('Body / context for the question (optional but recommended)'),
+    options: z.array(z.string()).min(1).describe('List of option labels, 1-10 entries. Each becomes a slash command via lowercase + dash-join, e.g. "Send anyway" → /send-anyway.'),
+  },
+  async (args) => {
+    const data: Record<string, unknown> = {
+      type: 'ask_question',
+      chatJid,
+      questionId: args.questionId,
+      title: args.title,
+      question: args.question ?? '',
+      options: args.options,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+    writeIpcFile(MESSAGES_DIR, data);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Question queued (id=${args.questionId}, options=${args.options.length}). The user's selection will arrive as your next inbound message.`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  'send_dm',
+  "Send a direct WhatsApp message to a user by phone number — even if that user has never messaged the bot before. Use for proactive notifications (alerts, scheduled reminders to specific people, approval requests). Only the main group's agent is authorized to initiate cold DMs; non-main groups may only reply within their existing chats.",
+  {
+    phone: z.string().describe('Phone number with country code. Accepts "14165551234", "+1 (416) 555-1234", or "1234567890@s.whatsapp.net" — non-digits are stripped.'),
+    text: z.string().describe('Message body (supports markdown — will be converted to WhatsApp-native formatting). `@<digits>` mentions in the body get rendered as native WA tags.'),
+  },
+  async (args) => {
+    const data: Record<string, string | undefined> = {
+      type: 'send_dm',
+      phone: args.phone,
+      text: args.text,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+    writeIpcFile(MESSAGES_DIR, data);
+    return { content: [{ type: 'text' as const, text: `DM queued for ${args.phone}` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools.
 
