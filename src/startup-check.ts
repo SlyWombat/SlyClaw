@@ -53,22 +53,25 @@ function checkEcowitt(): CheckResult {
 }
 
 function checkTunnel(): CheckResult {
-  // Try both user-level (the WSL/dev host pattern) and system-level (the
-  // M5/server pattern) — slyclaw-tunnel.service can be installed in either
-  // depending on whether slyclaw is running as the user's local agent or
-  // as a daemon on a dedicated box.
-  const probes = [
-    'systemctl is-active slyclaw-tunnel',
-    'systemctl --user is-active slyclaw-tunnel',
+  // The cloudflared tunnel that exposes the Alexa endpoint can be deployed
+  // three ways depending on the host:
+  //   - user-level systemd unit (`slyclaw-tunnel.service` under --user)  → WSL/dev
+  //   - system-level systemd unit (`slyclaw-tunnel.service`)              → bare-metal server
+  //   - Docker container named `cloudflared-slyclaw`                       → Dockge stack
+  // Check each in turn and report OK if any is alive.
+  const probes: Array<[string, (out: string) => boolean]> = [
+    ['systemctl is-active slyclaw-tunnel', (out) => out.trim() === 'active'],
+    ['systemctl --user is-active slyclaw-tunnel', (out) => out.trim() === 'active'],
+    ["docker inspect -f '{{.State.Running}}' cloudflared-slyclaw", (out) => out.trim() === 'true'],
   ];
-  for (const cmd of probes) {
+  for (const [cmd, isOk] of probes) {
     try {
-      const status = execSync(cmd, { stdio: 'pipe', encoding: 'utf-8' }).trim();
-      if (status === 'active') {
+      const out = execSync(cmd, { stdio: 'pipe', encoding: 'utf-8' });
+      if (isOk(out)) {
         return { name: 'Alexa Integration', ok: true };
       }
     } catch {
-      // is-active exits non-zero for inactive/missing — try the next scope
+      // command failed or returned non-zero — try the next probe
     }
   }
   return { name: 'Alexa Integration', ok: false, detail: 'not running' };
