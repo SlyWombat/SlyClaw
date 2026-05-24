@@ -85,6 +85,7 @@ import { Channel, NewMessage, OnChatMetadata, OnInboundMessage, RegisteredGroup 
 
 const AUTH_DIR = path.join(STORE_DIR, 'auth');
 const PAIRING_CODE_FILE = path.join(STORE_DIR, 'pairing-code.txt');
+const QR_PNG_FILE = path.join(STORE_DIR, 'qr.png');
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 const GROUP_METADATA_CACHE_TTL_MS = 60_000; // 1 min for outbound sends
 const SENT_MESSAGE_CACHE_MAX = 256;
@@ -388,7 +389,9 @@ export class WhatsAppChannel implements Channel {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr && !phoneNumber) {
-        // QR auth — print ASCII to log
+        // QR auth — print ASCII to log AND save as PNG. ASCII through
+        // terminal scrollback can be hard to scan reliably; the PNG is
+        // a no-fail fallback the user can open in any image viewer.
         QRCode.toString(qr, { type: 'terminal', small: true })
           .then((ascii) => {
             logger.info(
@@ -397,6 +400,14 @@ export class WhatsAppChannel implements Channel {
             );
           })
           .catch((err) => logger.warn({ err, qr }, 'Failed to render QR ASCII'));
+        QRCode.toFile(QR_PNG_FILE, qr, { width: 512, margin: 2 })
+          .then(() => {
+            logger.info(
+              { path: QR_PNG_FILE },
+              `WhatsApp QR also saved as PNG (open it in any image viewer to scan)`,
+            );
+          })
+          .catch((err) => logger.warn({ err }, 'Failed to write QR PNG'));
       }
 
       if (connection === 'close') {
