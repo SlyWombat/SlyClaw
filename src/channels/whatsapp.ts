@@ -639,12 +639,12 @@ export class WhatsAppChannel implements Channel {
 
   private async handleIncomingMessage(msg: WAMessage): Promise<void> {
     if (!msg.message) {
-      logger.debug({ msgId: msg.key.id }, 'Inbound msg dropped: !msg.message');
+      logger.info({ msgId: msg.key.id, key: msg.key }, 'Inbound msg dropped: !msg.message (protocol/notify)');
       return;
     }
     const normalized = normalizeMessageContent(msg.message);
     if (!normalized) {
-      logger.debug(
+      logger.info(
         { msgId: msg.key.id, keys: Object.keys(msg.message) },
         'Inbound msg dropped: normalizeMessageContent returned null',
       );
@@ -653,7 +653,7 @@ export class WhatsAppChannel implements Channel {
 
     const rawJid = msg.key.remoteJid;
     if (!rawJid || rawJid === 'status@broadcast') {
-      logger.debug({ msgId: msg.key.id, rawJid }, 'Inbound msg dropped: no/status JID');
+      logger.info({ msgId: msg.key.id, rawJid }, 'Inbound msg dropped: no/status JID');
       return;
     }
 
@@ -687,7 +687,13 @@ export class WhatsAppChannel implements Channel {
     const attachment = await this.downloadInboundMedia(msg, normalized);
 
     // Skip empty protocol messages (no text and no media)
-    if (!content && !attachment) return;
+    if (!content && !attachment) {
+      logger.info(
+        { msgId: msg.key.id, chatJid, normKeys: Object.keys(normalized) },
+        'Inbound msg dropped: empty content + no attachment',
+      );
+      return;
+    }
 
     // Resolve sender: in groups, participant may be LID — translate first
     const rawSender = msg.key.participant || msg.key.remoteJid || '';
@@ -697,14 +703,36 @@ export class WhatsAppChannel implements Channel {
     const senderName = msg.pushName || sender.split('@')[0];
     const fromMe = msg.key.fromMe || false;
 
-    // Echo filter. In self-chat (user messaging their own number) every
-    // message has fromMe=true — we can't blanket-drop them, but our own
-    // echoes are in sentMessageCache. In any other chat fromMe=true means
-    // the user's phone sent it, which shouldn't wake the agent.
+    // Echo filter. fromMe=true has two very different meanings depending
+    // on whether the bot has its own WA number:
+    //
+    //   ASSISTANT_HAS_OWN_NUMBER=true  (dedicated bot number):
+    //     fromMe=true ⇒ ALWAYS the bot's echo of its own send.
+    //     Safe to blanket-drop.
+    //
+    //   ASSISTANT_HAS_OWN_NUMBER=false (bot shares the user's number — our case):
+    //     fromMe=true could be EITHER the bot echoing OR the user typing
+    //     from their phone (since the user IS the bot's number). We must
+    //     use sentMessageCache to distinguish — only drop ids we just sent;
+    //     pass everything else through so user-typed @Nano messages reach
+    //     the router. The previous "non-self-chat ⇒ drop" filter silently
+    //     ate every user message in every group chat.
     if (fromMe) {
-      const isSelfChat = this.botPhoneJid && chatJid === this.botPhoneJid;
-      if (!isSelfChat) return;
-      if (msg.key.id && this.sentMessageCache.has(msg.key.id)) return;
+      if (msg.key.id && this.sentMessageCache.has(msg.key.id)) {
+        logger.debug({ msgId: msg.key.id }, 'Inbound msg dropped: own echo (sentMessageCache hit)');
+        return;
+      }
+      if (ASSISTANT_HAS_OWN_NUMBER) {
+        // Dedicated bot number — fromMe with no cache hit is still a bot
+        // echo (or a stale echo whose id rolled out of the LRU). Drop.
+        logger.debug(
+          { msgId: msg.key.id, chatJid },
+          'Inbound msg dropped: fromMe with dedicated bot number',
+        );
+        return;
+      }
+      // Shared-number mode: this is the user typing from their own phone.
+      // Fall through to the router.
     }
 
     const isBotMessage = ASSISTANT_HAS_OWN_NUMBER
