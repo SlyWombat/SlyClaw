@@ -131,7 +131,11 @@ export function loadMountAllowlist(): MountAllowlist | null {
 /**
  * Expand ~ to home directory and resolve to absolute path
  */
-function expandPath(p: string): string {
+function expandPath(p: string | undefined | null): string {
+  if (typeof p !== 'string' || p.length === 0) {
+    // Caller passed undefined/null — surface a clear error rather than crashing inside .startsWith
+    throw new Error(`expandPath: expected non-empty string, got ${p === null ? 'null' : typeof p} (${JSON.stringify(p)})`);
+  }
   const homeDir = process.env.HOME || '/Users/user';
   if (p.startsWith('~/')) {
     return path.join(homeDir, p.slice(2));
@@ -188,7 +192,17 @@ function findAllowedRoot(
   allowedRoots: AllowedRoot[],
 ): AllowedRoot | null {
   for (const root of allowedRoots) {
-    const expandedRoot = expandPath(root.path);
+    if (!root || typeof root.path !== 'string' || !root.path) {
+      logger.warn({ root }, 'Allowlist entry missing "path" field — skipping. Check ~/.config/slyclaw/mount-allowlist.json');
+      continue;
+    }
+    let expandedRoot: string;
+    try {
+      expandedRoot = expandPath(root.path);
+    } catch (err) {
+      logger.warn({ root, err: (err as Error).message }, 'Allowlist entry could not be expanded — skipping');
+      continue;
+    }
     const realRoot = getRealPath(expandedRoot);
 
     if (realRoot === null) {
@@ -265,7 +279,13 @@ export function validateMount(
     };
   }
 
-  // Expand and resolve the host path
+  // Expand and resolve the host path (guard against undefined to avoid startsWith crash)
+  if (typeof mount.hostPath !== 'string' || !mount.hostPath) {
+    return {
+      allowed: false,
+      reason: `Mount has missing or invalid hostPath: ${JSON.stringify(mount)}`,
+    };
+  }
   const expandedPath = expandPath(mount.hostPath);
   const realPath = getRealPath(expandedPath);
 
