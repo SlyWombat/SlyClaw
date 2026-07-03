@@ -14,6 +14,7 @@ import { CronExpressionParser } from 'cron-parser';
 import { OLLAMA_LOCAL_URL, TIMEZONE } from './config.js';
 import { createTask, deleteTask, getTasksForGroup } from './db.js';
 import { logger } from './logger.js';
+import { listEmail, readEmail, searchEmail } from './outlook.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -256,9 +257,67 @@ export const OLLAMA_TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'search_email',
+      description:
+        "Search the user's email mailbox by keyword, sender, or subject and return the matching messages with a preview of each. Use this whenever the user asks to find, review, check, or summarize email about a topic, person, or company (e.g. \"any email from tfl.gov.uk\", \"emails about Encore heating\"). This reads the user's own inbox — do NOT delegate email reads to Claude.",
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Keywords, sender name/address, or subject terms to search for.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'list_email',
+      description:
+        "List the most recent emails from a mailbox folder (inbox, sent, drafts, junk, or archive). Use this when the user asks what's in their inbox or to see recent mail without a specific search term.",
+      parameters: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description: 'One of: inbox, sent, drafts, junk, archive. Defaults to inbox.',
+          },
+          count: {
+            type: 'number',
+            description: 'How many recent messages to list (default 10, max 25).',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'read_email',
+      description:
+        'Read the full body of one email returned by a previous search_email or list_email call. Pass the [number] shown next to that message. Only needed when the preview is not enough to answer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          index: {
+            type: 'number',
+            description: 'The 1-based [number] of the message from the most recent search_email/list_email result.',
+          },
+        },
+        required: ['index'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'delegate_to_claude',
       description:
-        'Hand off this task to the Claude agent, which has full system access. Use this for: email (read inbox, send, search, reply), calendar, contacts, reading or writing files, running bash commands, managing groups, accessing the database, browser automation, or any capability beyond web search and URL fetching. When in doubt, call this — Claude can do anything you cannot.',
+        'Hand off this task to the Claude agent, which has full system access. Use this for: SENDING or replying to email, calendar, contacts, reading or writing files, running bash commands, managing groups, accessing the database, browser automation, or any capability beyond web search, URL fetching, and reading email. Note: reading/searching/summarizing email is handled by search_email and read_email — do NOT delegate those. When in doubt about a non-email action, call this.',
       parameters: {
         type: 'object',
         properties: {
@@ -530,6 +589,9 @@ function listScheduledTasks(groupFolder: string): string {
 export interface OllamaToolContext {
   groupFolder: string;
   chatJid: string;
+  // Ordered message IDs from the most recent search_email/list_email in this
+  // agent loop, so read_email can resolve a 1-based [number] back to an ID.
+  emailIds?: string[];
 }
 
 export async function executeTool(
@@ -570,6 +632,30 @@ export async function executeTool(
     if (name === 'get_weather') {
       const { getWeatherConditions } = await import('./weather-station.js');
       return await getWeatherConditions();
+    }
+    if (name === 'search_email') {
+      const query = typeof args.query === 'string' ? args.query : String(args.query ?? '');
+      if (!query) return 'Error: query parameter is required';
+      const { text, ids } = await searchEmail(query);
+      ctx.emailIds = ids;
+      return text;
+    }
+    if (name === 'list_email') {
+      const folder = typeof args.folder === 'string' && args.folder ? args.folder : 'inbox';
+      const rawCount = typeof args.count === 'number' ? args.count : parseInt(String(args.count ?? ''), 10);
+      const count = Number.isFinite(rawCount) ? Math.min(Math.max(rawCount, 1), 25) : 10;
+      const { text, ids } = await listEmail(folder, count);
+      ctx.emailIds = ids;
+      return text;
+    }
+    if (name === 'read_email') {
+      const idx = typeof args.index === 'number' ? args.index : parseInt(String(args.index ?? ''), 10);
+      const ids = ctx.emailIds ?? [];
+      if (!ids.length) return 'Error: call search_email or list_email first, then read_email by its [number].';
+      if (!Number.isFinite(idx) || idx < 1 || idx > ids.length) {
+        return `Error: index must be between 1 and ${ids.length} (from the last email list).`;
+      }
+      return await readEmail(ids[idx - 1]);
     }
     if (name === 'switchbot_list_devices') {
       const { switchBotListDevices } = await import('./switchbot.js');

@@ -304,6 +304,9 @@ export async function callOllama(
     `  - fetch_url: read a web page\n` +
     `  - get_current_time: get the current date and time\n` +
     `  - get_weather: get real-time conditions from the home weather station (temperature, humidity, wind, rain, UV, pressure)\n` +
+    `  - search_email: search the user's own email inbox by keyword/sender/subject (returns matches with previews)\n` +
+    `  - list_email: list recent emails from a folder (inbox/sent/drafts/junk/archive)\n` +
+    `  - read_email: read the full body of a specific email from a search_email/list_email result (by its [number])\n` +
     `  - list_scheduled_tasks: list all recurring tasks/reminders set up for this group\n` +
     `  - create_scheduled_task: create a new scheduled task (requires prompt + cron expression)\n` +
     `  - delete_scheduled_task: cancel a scheduled task by ID\n` +
@@ -319,7 +322,8 @@ export async function callOllama(
     `  - When asked about weather, temperature, rain, wind, UV, or conditions outside: call get_weather immediately. NEVER ask for location — the station is at the user's home.\n` +
     `  - When asked to search or fetch web content, call web_search or fetch_url.\n` +
     `  - When asked to schedule or cancel tasks, use create_scheduled_task or delete_scheduled_task.\n` +
-    `  - When asked about email, inbox, calendar, files, or anything requiring system access, call delegate_to_claude.\n` +
+    `  - When asked to read, search, check, or summarize email or your inbox, call search_email (then read_email for a specific message). NEVER delegate email READING to Claude — you can read email yourself.\n` +
+    `  - When asked to SEND or reply to email, or about calendar, contacts, files, or bash commands, call delegate_to_claude.\n` +
     `  - If you are unsure whether you can do something, call delegate_to_claude rather than guessing.\n` +
     `  - NEVER say you cannot do something — use delegate_to_claude instead.\n` +
     `  - Respond concisely. Use WhatsApp formatting: *bold*, _italic_, no markdown headings.\n` +
