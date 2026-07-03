@@ -77,6 +77,7 @@ let cachedData: EcowittRealTimeData | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let consecutiveFailures = 0;
 
 // Synchronous getter — returns formatted summary if cache is populated, null otherwise.
 // Used to inject weather into the Ollama system prompt without a tool call.
@@ -101,9 +102,21 @@ export function startWeatherBackgroundRefresh(): void {
       .then((data) => {
         cachedData = data;
         cacheTimestamp = Date.now();
+        consecutiveFailures = 0;
         logger.debug('Weather cache refreshed');
       })
-      .catch((err) => logger.warn({ err }, 'Background weather refresh failed'));
+      .catch((err) => {
+        consecutiveFailures += 1;
+        const staleMin = cacheTimestamp ? Math.round((Date.now() - cacheTimestamp) / 60_000) : null;
+        // Stay quiet about transient blips (DNS EAI_AGAIN, connect timeout, brief
+        // "Operation too frequent" rate-limit) — the warm cache still serves queries.
+        // Only escalate once several 5-min cycles in a row fail (~15 min of no data).
+        if (consecutiveFailures >= 3) {
+          logger.warn({ err, consecutiveFailures, staleMin }, 'Weather refresh repeatedly failing — cache stale');
+        } else {
+          logger.debug({ err, consecutiveFailures }, 'Background weather refresh failed (transient)');
+        }
+      });
   };
 
   refresh(); // immediate first fetch
@@ -115,7 +128,38 @@ export function startWeatherBackgroundRefresh(): void {
 // Fetch from Ecowitt cloud API
 // ---------------------------------------------------------------------------
 
-async function fetchFromCloud(): Promise<EcowittRealTimeData> {
+const MAX_FETCH_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 2_000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// A transient network blip (DNS EAI_AGAIN, connect timeout, reset, aborted fetch) is
+// worth a quick retry. Rate-limit ("Operation too frequent"), auth, and HTTP errors are
+// NOT retried in-loop — retrying a rate-limit within seconds just trips it again, so we
+// let those propagate and serve stale cache until the next 5-minute cycle.
+export function isRetryableNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
+  const msg = err.message.toLowerCase();
+  if (
+    msg.includes('fetch failed') ||
+    msg.includes('eai_again') ||
+    msg.includes('enotfound') ||
+    msg.includes('econnreset') ||
+    msg.includes('etimedout') ||
+    msg.includes('connect timeout') ||
+    msg.includes('socket') ||
+    msg.includes('network')
+  ) {
+    return true;
+  }
+  // undici surfaces "TypeError: fetch failed" and wraps the real DNS/connect error in .cause
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error && cause !== err) return isRetryableNetworkError(cause);
+  return false;
+}
+
+async function fetchRealTimeOnce(): Promise<EcowittRealTimeData> {
   const params = new URLSearchParams({
     application_key: ECOWITT_APP_KEY,
     api_key: ECOWITT_API_KEY,
@@ -142,6 +186,22 @@ async function fetchFromCloud(): Promise<EcowittRealTimeData> {
   }
 
   return body.data ?? {};
+}
+
+async function fetchFromCloud(): Promise<EcowittRealTimeData> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt++) {
+    try {
+      return await fetchRealTimeOnce();
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= MAX_FETCH_ATTEMPTS || !isRetryableNetworkError(err)) throw err;
+      const delayMs = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1); // 2s, 4s
+      logger.debug({ attempt, delayMs }, 'Ecowitt fetch blip — retrying');
+      await sleep(delayMs);
+    }
+  }
+  throw lastErr; // unreachable; the loop returns or throws
 }
 
 // ---------------------------------------------------------------------------
