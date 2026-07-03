@@ -16,7 +16,7 @@ import { readEnvFile } from './env.js';
 // Read config values from .env (falls back to process.env).
 // Secrets are NOT read here — they stay on disk and are loaded only
 // where needed (container-runner.ts) to avoid leaking to child processes.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL', 'ALEXA_PORT', 'ALEXA_SKILL_ID', 'ECOWITT_APP_KEY', 'ECOWITT_API_KEY', 'ECOWITT_MAC', 'ECOWITT_STATION_NAME', 'ECOWITT_LOCAL_PORT', 'GOOGLE_API_KEY', 'SWITCHBOT_TOKEN', 'SWITCHBOT_SECRET']);
+const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'DEFAULT_LLM', 'OLLAMA_LOCAL_URL', 'OLLAMA_TIMEOUT_MS', 'ALEXA_PORT', 'ALEXA_SKILL_ID', 'ECOWITT_APP_KEY', 'ECOWITT_API_KEY', 'ECOWITT_MAC', 'ECOWITT_STATION_NAME', 'ECOWITT_LOCAL_PORT', 'GOOGLE_API_KEY', 'SWITCHBOT_TOKEN', 'SWITCHBOT_SECRET']);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Nano';
@@ -35,6 +35,12 @@ export const OLLAMA_LOCAL_URL =
 // Separate from DEFAULT_LLM (which controls the Qwen routing layer).
 export const OLLAMA_DEFAULT_MODEL =
   process.env.OLLAMA_DEFAULT_MODEL || 'llama3.2';
+
+// Per-inference-step timeout (ms) for the local Ollama routing model. Larger
+// local models (e.g. gemma4:31b) can exceed the old 120s default when digesting
+// big tool results, causing a fall-through to Claude. Override via OLLAMA_TIMEOUT_MS.
+export const OLLAMA_TIMEOUT_MS =
+  parseInt(process.env.OLLAMA_TIMEOUT_MS || envConfig.OLLAMA_TIMEOUT_MS || '300000', 10) || 300000;
 
 export const POLL_INTERVAL = 500;
 export const SCHEDULER_POLL_INTERVAL = 60000;

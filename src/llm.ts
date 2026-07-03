@@ -12,7 +12,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { DEFAULT_LLM, GROUPS_DIR, OLLAMA_LOCAL_URL } from './config.js';
+import { DEFAULT_LLM, GROUPS_DIR, OLLAMA_LOCAL_URL, OLLAMA_TIMEOUT_MS } from './config.js';
 import { getRouterState, setRouterState } from './db.js';
 import { logger } from './logger.js';
 import { DelegateToClaudeError, OllamaApiMessage, OllamaToolContext, callOllamaWithTools } from './ollama-tools.js';
@@ -290,7 +290,7 @@ export async function callOllama(
   chatJid: string,
   userMessage: string,
   systemPrompt: string,
-  timeoutMs = 120_000,
+  timeoutMs = OLLAMA_TIMEOUT_MS,
 ): Promise<string> {
   const history = getOllamaHistory(groupFolder);
 
