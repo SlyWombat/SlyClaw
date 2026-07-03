@@ -15,7 +15,7 @@ import path from 'path';
 import { DEFAULT_LLM, GROUPS_DIR, OLLAMA_LOCAL_URL } from './config.js';
 import { getRouterState, setRouterState } from './db.js';
 import { logger } from './logger.js';
-import { OllamaApiMessage, OllamaToolContext, callOllamaWithTools } from './ollama-tools.js';
+import { DelegateToClaudeError, OllamaApiMessage, OllamaToolContext, callOllamaWithTools } from './ollama-tools.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -343,6 +343,11 @@ export async function callOllama(
   try {
     reply = await callOllamaWithTools(model, messages, timeoutMs, ctx);
   } catch (err) {
+    // A delegate_to_claude tool call surfaces as this control-flow signal — it must
+    // propagate to index.ts (which hands off to the Claude container), NOT be treated
+    // as a tool-support failure. Note the reason text often contains the word "tool",
+    // which would otherwise match the plain-chat fallback regex below.
+    if (err instanceof DelegateToClaudeError) throw err;
     const errMsg = err instanceof Error ? err.message : String(err);
     // Some models don't support tool calling — fall back to plain chat
     if (/tool|function.?call/i.test(errMsg)) {
