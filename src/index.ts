@@ -27,6 +27,7 @@ import {
 } from './config.js';
 import {
   LlmChoice,
+  appendOllamaHistory,
   callOllama,
   clearOllamaHistory,
   detectLlmCommand,
@@ -499,6 +500,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   let hadError = false;
   let outputSentToUser = false;
+  let claudeAnswer = '';
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
     if (result.result) {
@@ -509,6 +511,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         cancelAck(); // Cancel ack now that we have a real answer
         await sendToChannel(chatJid,text);
         outputSentToUser = true;
+        claudeAnswer += (claudeAnswer ? '\n' : '') + text;
       }
       resetIdleTimer();
       queue.killContainer(chatJid);
@@ -522,6 +525,15 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await getChannelForJid(chatJid)?.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
   queue.killContainer(chatJid);
+
+  // If the Ollama router delegated to Claude, fold Claude's answer back into the
+  // Ollama history so a follow-up handled by the router still has the context.
+  // On delegation, callOllama throws before persisting its own turn, so there's
+  // no duplicate entry for this exchange.
+  if (outputSentToUser && claudeAnswer && currentLlm.type === 'ollama') {
+    const recorded = claudeAnswer.length > 2000 ? claudeAnswer.slice(0, 2000) + '…' : claudeAnswer;
+    appendOllamaHistory(group.folder, prompt, recorded);
+  }
 
   if (output === 'error' || hadError) {
     if (outputSentToUser) {
