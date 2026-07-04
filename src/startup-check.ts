@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 
-import { ECOWITT_APP_KEY, GOOGLE_API_KEY, OLLAMA_LOCAL_URL } from './config.js';
+import { ALEXA_PORT, ECOWITT_APP_KEY, GOOGLE_API_KEY, OLLAMA_LOCAL_URL } from './config.js';
 import { logger } from './logger.js';
 
 const STARTUP_MESSAGES = [
@@ -52,29 +52,22 @@ function checkEcowitt(): CheckResult {
     : { name: 'Ecowitt', ok: false, detail: 'not configured' };
 }
 
-function checkTunnel(): CheckResult {
-  // The cloudflared tunnel that exposes the Alexa endpoint can be deployed
-  // three ways depending on the host:
-  //   - user-level systemd unit (`slyclaw-tunnel.service` under --user)  → WSL/dev
-  //   - system-level systemd unit (`slyclaw-tunnel.service`)              → bare-metal server
-  //   - Docker container named `cloudflared-slyclaw`                       → Dockge stack
-  // Check each in turn and report OK if any is alive.
-  const probes: Array<[string, (out: string) => boolean]> = [
-    ['systemctl is-active slyclaw-tunnel', (out) => out.trim() === 'active'],
-    ['systemctl --user is-active slyclaw-tunnel', (out) => out.trim() === 'active'],
-    ["docker inspect -f '{{.State.Running}}' cloudflared-slyclaw", (out) => out.trim() === 'true'],
-  ];
-  for (const [cmd, isOk] of probes) {
-    try {
-      const out = execSync(cmd, { stdio: 'pipe', encoding: 'utf-8' });
-      if (isOk(out)) {
-        return { name: 'Alexa Integration', ok: true };
-      }
-    } catch {
-      // command failed or returned non-zero — try the next probe
-    }
+async function checkAlexa(): Promise<CheckResult> {
+  // We can only truthfully verify what THIS process owns: that our Alexa HTTP
+  // endpoint is listening. The cloudflared tunnel that publishes it publicly
+  // runs on a different host (kdocker) after the kdocker2 migration, so probing
+  // for a local tunnel unit/container here always failed and produced a false
+  // "not running" — even while Alexa worked end-to-end. Any HTTP response from
+  // the local endpoint (even a 404) means the server is up.
+  if (!ALEXA_PORT) {
+    return { name: 'Alexa Integration', ok: false, detail: 'not configured' };
   }
-  return { name: 'Alexa Integration', ok: false, detail: 'not running' };
+  try {
+    await fetch(`http://127.0.0.1:${ALEXA_PORT}/`, { signal: AbortSignal.timeout(3000) });
+    return { name: 'Alexa Integration', ok: true };
+  } catch {
+    return { name: 'Alexa Integration', ok: false, detail: 'endpoint not responding' };
+  }
 }
 
 function checkDocker(): CheckResult {
@@ -108,7 +101,7 @@ export async function buildStatusReport(plain = false): Promise<string> {
     checkOllama(),
     Promise.resolve(checkGemini()),
     Promise.resolve(checkEcowitt()),
-    Promise.resolve(checkTunnel()),
+    checkAlexa(),
   ]);
 
   const allOk = checks.every((c) => c.ok);
@@ -139,7 +132,7 @@ export async function runStartupCheck(
     checkOllama(),
     Promise.resolve(checkGemini()),
     Promise.resolve(checkEcowitt()),
-    Promise.resolve(checkTunnel()),
+    checkAlexa(),
   ]);
 
   const allOk = checks.every((c) => c.ok);
